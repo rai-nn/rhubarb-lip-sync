@@ -10,7 +10,9 @@
 
 JoiningContinuousTimeline<Shape> animate(
 	const BoundedTimeline<Phone>& phones,
-	const ShapeSet& targetShapeSet
+	const ShapeSet& targetShapeSet,
+	bool noTweening,
+	bool skipTimingOptimization
 ) {
 	// Create timeline of shape rules
 	ContinuousTimeline<ShapeRule> shapeRules = getShapeRules(phones);
@@ -22,11 +24,21 @@ JoiningContinuousTimeline<Shape> animate(
 	shapeRules = convertToTargetShapeSet(shapeRules, targetShapeSetPlusX);
 
 	// Animate in multiple steps
-	const auto performMainAnimationSteps = [&targetShapeSet](const auto& shapeRules) {
+	const auto performMainAnimationSteps = [&targetShapeSet, noTweening, skipTimingOptimization](const auto& shapeRules) {
 		JoiningContinuousTimeline<Shape> animation = animateRough(shapeRules);
-		animation = optimizeTiming(animation);
+		
+		// Skip timing optimization if requested
+		if (!skipTimingOptimization) {
+			animation = optimizeTiming(animation);
+		}
+		
 		animation = animatePauses(animation);
-		animation = insertTweens(animation);
+		
+		// Apply tweening unless disabled
+		if (!noTweening) {
+			animation = insertTweens(animation);
+		}
+		
 		animation = convertToTargetShapeSet(animation, targetShapeSet);
 		return animation;
 	};

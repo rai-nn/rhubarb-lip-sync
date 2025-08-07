@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(if [ -d .github/workflows ])",
+      "Bash(then ls -la .github/workflows/)",
+      "Bash(fi)",
+      "Bash(cmake:*)",
+      "Bash(mkdir:*)",
+      "Bash(./build/rhubarb:*)",
+      "Bash(./run_test.sh)",
+      "Bash(jq:*)",
+      "Bash(chmod:*)",
+      "Bash(./test-comparison/test_animation_modes.sh:*)",
+      "Bash(./rhubarb:*)"
+    ],
+    "deny": []
+  }
+}

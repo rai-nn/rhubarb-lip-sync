@@ -7,5 +7,7 @@
 
 JoiningContinuousTimeline<Shape> animate(
 	const BoundedTimeline<Phone>& phones,
-	const ShapeSet& targetShapeSet
+	const ShapeSet& targetShapeSet,
+	bool noTweening = false,
+	bool skipTimingOptimization = false
 );

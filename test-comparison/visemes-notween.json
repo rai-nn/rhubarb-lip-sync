@@ -1,8 +1,8 @@
 {
   "metadata": {
     "audio_duration": 24.41,
-    "visemes_count": 156,
-    "exported_at": "2025-08-07T20:37:39.418521Z"
+    "visemes_count": 154,
+    "exported_at": "2025-08-07T20:37:39.437888Z"
   },
   "visemes": [
     {
@@ -22,16 +22,11 @@
     },
     {
       "start": 0.34,
-      "end": 0.59,
+      "end": 0.62,
       "value": "D"
     },
     {
-      "start": 0.59,
-      "end": 0.66,
-      "value": "C"
-    },
-    {
-      "start": 0.66,
+      "start": 0.62,
       "end": 0.9,
       "value": "B"
     },
@@ -282,16 +277,11 @@
     },
     {
       "start": 8.51,
-      "end": 8.65,
+      "end": 8.67,
       "value": "D"
     },
     {
-      "start": 8.65,
-      "end": 8.69,
-      "value": "C"
-    },
-    {
-      "start": 8.69,
+      "start": 8.67,
       "end": 9.23,
       "value": "B"
     },

@@ -237,6 +237,22 @@ int main(int platformArgc, char* platformArgv[]) {
 		false, 60, "number", cmd
 	);
 
+	tclap::SwitchArg noTweening(
+		"", "noTweening",
+		"Disable tweening between mouth shapes. "
+		"By default, Rhubarb inserts transition shapes for smoother animation. "
+		"Use this flag to disable that behavior.",
+		cmd, false
+	);
+
+	tclap::SwitchArg skipTimingOptimization(
+		"", "skipTimingOptimization",
+		"Skip the timing optimization step that consolidates short visemes. "
+		"This preserves all original phoneme-to-viseme mappings, even very short ones. "
+		"Useful when your animation system handles timing and interpolation.",
+		cmd, false
+	);
+
 	tclap::UnlabeledValueArg<string> inputFileName(
 		"inputFile", "The input file. Must be a sound file in WAVE format.",
 		true, "", "string", cmd
@@ -317,7 +333,9 @@ int main(int platformArgc, char* platformArgv[]) {
 				*createRecognizer(recognizerType.getValue()),
 				targetShapeSet,
 				maxThreadCount.getValue(),
-				progressSink);
+				progressSink,
+				noTweening.getValue(),
+				skipTimingOptimization.getValue());
 			logging::info("Done animating.");
 
 			// Export animation
