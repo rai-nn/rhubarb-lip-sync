@@ -55,21 +55,25 @@ Shape getClosestShape(Shape reference, ShapeSet shapes) {
 }
 
 optional<pair<Shape, TweenTiming>> getTween(Shape first, Shape second) {
-	// Note that most of the following rules work in one direction only.
-	// That's because in animation, the mouth should usually "pop" open without inbetweens,
-	// then close slowly.
-	static const map<pair<Shape, Shape>, pair<Shape, TweenTiming>> lookup {
-		{ { D, A }, { C, TweenTiming::Early } },
-		{ { D, B }, { C, TweenTiming::Centered } },
-		{ { D, G }, { C, TweenTiming::Early } },
-		{ { D, X }, { C, TweenTiming::Late } },
-		{ { C, F }, { E, TweenTiming::Centered } }, { { F, C }, { E, TweenTiming::Centered } },
-		{ { D, F }, { E, TweenTiming::Centered } },
-		{ { H, F }, { E, TweenTiming::Late } }, { { F, H }, { E, TweenTiming::Early } }
-	};
-	const auto it = lookup.find({ first, second });
-	return it != lookup.end() ? it->second : optional<pair<Shape, TweenTiming>>();
+	return optional<pair<Shape, TweenTiming>>();
 }
+
+// optional<pair<Shape, TweenTiming>> getTween(Shape first, Shape second) {
+// 	// Note that most of the following rules work in one direction only.
+// 	// That's because in animation, the mouth should usually "pop" open without inbetweens,
+// 	// then close slowly.
+// 	static const map<pair<Shape, Shape>, pair<Shape, TweenTiming>> lookup {
+// 		{ { D, A }, { C, TweenTiming::Early } },
+// 		{ { D, B }, { C, TweenTiming::Centered } },
+// 		{ { D, G }, { C, TweenTiming::Early } },
+// 		{ { D, X }, { C, TweenTiming::Late } },
+// 		{ { C, F }, { E, TweenTiming::Centered } }, { { F, C }, { E, TweenTiming::Centered } },
+// 		{ { D, F }, { E, TweenTiming::Centered } },
+// 		{ { H, F }, { E, TweenTiming::Late } }, { { F, H }, { E, TweenTiming::Early } }
+// 	};
+// 	const auto it = lookup.find({ first, second });
+// 	return it != lookup.end() ? it->second : optional<pair<Shape, TweenTiming>>();
+// }
 
 Timeline<ShapeSet> getShapeSets(Phone phone, centiseconds duration, centiseconds previousDuration) {
 	// Returns a timeline with a single shape set
@@ -163,4 +167,69 @@ Timeline<ShapeSet> getShapeSets(Phone phone, centiseconds duration, centiseconds
 
 		default: throw std::invalid_argument("Unexpected phone.");
 	}
+}
+
+bool isLikelySentenceBoundary(optional<Phone> prevPhone, optional<Phone> nextPhone) {
+	// No phones means silence, likely a boundary
+	if (!prevPhone || !nextPhone) {
+		return true;
+	}
+	
+	// Check for stop consonants at end of previous phone
+	bool prevIsStop = false;
+	switch (*prevPhone) {
+		case Phone::P:
+		case Phone::B:
+		case Phone::T:
+		case Phone::D:
+		case Phone::K:
+		case Phone::G:
+			prevIsStop = true;
+			break;
+		default:
+			break;
+	}
+	
+	// Check for consonant clusters that typically indicate new sentence/phrase
+	bool nextIsHardStart = false;
+	switch (*nextPhone) {
+		case Phone::P:
+		case Phone::B:
+		case Phone::T:
+		case Phone::D:
+		case Phone::K:
+		case Phone::G:
+		case Phone::HH:  // "He", "How", etc. often start sentences
+		case Phone::W:   // "What", "When", "Why" question words
+			nextIsHardStart = true;
+			break;
+		default:
+			break;
+	}
+	
+	// Stop consonant followed by another consonant often indicates boundary
+	// This catches patterns like "that. The" or "stop. Please"
+	if (prevIsStop && nextIsHardStart) {
+		return true;
+	}
+	
+	// Check for fricatives at end (common sentence endings)
+	bool prevIsFricative = false;
+	switch (*prevPhone) {
+		case Phone::S:   // words ending in 's'
+		case Phone::Z:   // words ending in 's' (voiced)
+		case Phone::F:
+		case Phone::V:
+			prevIsFricative = true;
+			break;
+		default:
+			break;
+	}
+	
+	// Fricative followed by stop consonant suggests boundary
+	if (prevIsFricative && nextIsHardStart) {
+		return true;
+	}
+	
+	return false;
 }

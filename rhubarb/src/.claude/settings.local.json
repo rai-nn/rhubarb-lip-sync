@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(cmake:*)",
+      "Bash(/Users/peterstajger/git/rhubarb-lip-sync/build/rhubarb --help)",
+      "Bash(mkdir:*)",
+      "Bash(chmod:*)",
+      "Bash(./run_test.sh)",
+      "Bash(python3:*)",
+      "Bash(./rhubarb:*)",
+      "Bash(./test_speech_speeds.sh:*)"
+    ],
+    "deny": [],
+    "additionalDirectories": [
+      "/Users/peterstajger/git/rhubarb-lip-sync"
+    ]
+  }
+}

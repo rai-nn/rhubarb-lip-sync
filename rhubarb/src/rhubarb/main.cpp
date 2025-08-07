@@ -31,6 +31,7 @@
 #include "RecognizerType.h"
 #include "recognition/PocketSphinxRecognizer.h"
 #include "recognition/PhoneticRecognizer.h"
+#include "PauseDetectionConfig.h"
 
 using std::exception;
 using std::string;
@@ -205,6 +206,37 @@ int main(int platformArgc, char* platformArgv[]) {
 		false, RecognizerType::PocketSphinx, &recognizerConstraint, cmd
 	);
 
+	// Pause detection configuration arguments
+	tclap::ValueArg<string> speechSpeed(
+		"", "speechSpeed",
+		"Preset for speech speed detection: slow, normal, or fast. "
+		"slow: Conservative pause detection for slow speech. "
+		"normal: Balanced pause detection (default). "
+		"fast: Aggressive pause detection for fast speech.",
+		false, "normal", "string", cmd
+	);
+
+	tclap::ValueArg<int> vadMaxGap(
+		"", "vadMaxGap",
+		"Maximum gap to fill in voice activity detection (milliseconds). "
+		"Lower values preserve more pauses in fast speech. Default: 60ms",
+		false, 60, "number", cmd
+	);
+
+	tclap::ValueArg<int> vadMinSegment(
+		"", "vadMinSegment",
+		"Minimum segment length to keep (milliseconds). "
+		"Lower values preserve shorter speech segments. Default: 30ms",
+		false, 30, "number", cmd
+	);
+
+	tclap::ValueArg<int> microPauseThreshold(
+		"", "microPauseThreshold",
+		"Threshold for micro-pause detection (milliseconds). "
+		"Pauses shorter than this create subtle mouth relaxation. Default: 60ms",
+		false, 60, "number", cmd
+	);
+
 	tclap::UnlabeledValueArg<string> inputFileName(
 		"inputFile", "The input file. Must be a sound file in WAVE format.",
 		true, "", "string", cmd
@@ -240,6 +272,23 @@ int main(int platformArgc, char* platformArgv[]) {
 		}
 		path inputFilePath = u8path(inputFileName.getValue());
 		ShapeSet targetShapeSet = getTargetShapeSet(extendedShapes.getValue());
+
+		// Create and set pause detection configuration
+		PauseDetectionConfig pauseConfig = PauseDetectionConfig::forSpeechSpeed(speechSpeed.getValue());
+		
+		// Override with specific values if provided
+		if (vadMaxGap.isSet()) {
+			pauseConfig.vadMaxGap = PauseDetectionConfig::millisecondsToCs(vadMaxGap.getValue());
+		}
+		if (vadMinSegment.isSet()) {
+			pauseConfig.vadMinSegmentLength = PauseDetectionConfig::millisecondsToCs(vadMinSegment.getValue());
+		}
+		if (microPauseThreshold.isSet()) {
+			pauseConfig.microPauseThreshold = PauseDetectionConfig::millisecondsToCs(microPauseThreshold.getValue());
+		}
+		
+		// Set the global instance for use throughout the application
+		PauseDetectionConfig::setInstance(pauseConfig);
 
 		unique_ptr<Exporter> exporter = createExporter(
 			exportFormat.getValue(),

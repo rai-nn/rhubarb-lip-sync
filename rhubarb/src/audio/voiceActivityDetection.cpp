@@ -9,6 +9,7 @@
 #include <gsl_util.h>
 #include "tools/parallel.h"
 #include <webrtc/common_audio/vad/vad_core.h>
+#include "../rhubarb/PauseDetectionConfig.h"
 
 using std::vector;
 using boost::adaptors::transformed;
@@ -68,7 +69,9 @@ JoiningBoundedTimeline<void> detectVoiceActivity(
 	process16bitAudioClip(*audioClip, processBuffer, frameSize, progressSink);
 
 	// Fill small gaps in activity
-	const centiseconds maxGap(10);
+	// Use configurable values from PauseDetectionConfig
+	const auto& config = PauseDetectionConfig::getInstance();
+	const centiseconds maxGap = config.vadMaxGap;
 	for (const auto& pair : getPairs(activity)) {
 		if (pair.second.getStart() - pair.first.getEnd() <= maxGap) {
 			activity.set(pair.first.getEnd(), pair.second.getStart());
@@ -76,7 +79,8 @@ JoiningBoundedTimeline<void> detectVoiceActivity(
 	}
 
 	// Discard very short segments of activity
-	const centiseconds minSegmentLength(5);
+	// Use configurable minimum segment length
+	const centiseconds minSegmentLength = config.vadMinSegmentLength;
 	for (const auto& segment : Timeline<void>(activity)) {
 		if (segment.getDuration() < minSegmentLength) {
 			activity.clear(segment.getTimeRange());

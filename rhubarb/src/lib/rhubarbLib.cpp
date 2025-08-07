@@ -18,6 +18,7 @@ JoiningContinuousTimeline<Shape> animateAudioClip(
 {
 	const BoundedTimeline<Phone> phones =
 		recognizer.recognizePhones(audioClip, dialog, maxThreadCount, progressSink);
+	// The animation functions will use PauseDetectionConfig::getInstance() internally
 	JoiningContinuousTimeline<Shape> result = animate(phones, targetShapeSet);
 	return result;
 }

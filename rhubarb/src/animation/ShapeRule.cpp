@@ -2,6 +2,7 @@
 #include <boost/range/adaptor/transformed.hpp>
 #include <utility>
 #include "time/ContinuousTimeline.h"
+#include "../rhubarb/PauseDetectionConfig.h"
 
 using boost::optional;
 using boost::adaptors::transformed;
@@ -58,9 +59,28 @@ ContinuousTimeline<ShapeRule> getShapeRules(const BoundedTimeline<Phone>& phones
 		{ { Shape::X }, boost::none, { 0_cs, 0_cs } }
 	);
 	centiseconds previousDuration = 0_cs;
+	optional<Phone> previousPhone = boost::none;
+	
 	for (const auto& timedPhone : continuousPhones) {
 		optional<Phone> phone = timedPhone.getValue();
 		const centiseconds duration = timedPhone.getDuration();
+
+		// Check if we're at a likely sentence boundary
+		if (phone && previousPhone) {
+			const auto& config = PauseDetectionConfig::getInstance();
+			// If this looks like a sentence boundary in fast speech, insert a micro-pause
+			if (duration < config.sentenceBoundaryThreshold && isLikelySentenceBoundary(previousPhone, phone)) {
+				// Insert a brief closed mouth shape to create visual separation
+				centiseconds microPauseDuration = std::min(config.microPauseDuration, duration / 3);
+				centiseconds microPauseStart = timedPhone.getStart() - microPauseDuration / 2;
+				if (microPauseStart >= phones.getRange().getStart()) {
+					shapeRules.set(
+						{ microPauseStart, microPauseStart + microPauseDuration },
+						ShapeRule({ Shape::A }, boost::none, { microPauseStart, microPauseStart + microPauseDuration })
+					);
+				}
+			}
+		}
 
 		if (phone) {
 			// Animate one phone
@@ -80,6 +100,7 @@ ContinuousTimeline<ShapeRule> getShapeRules(const BoundedTimeline<Phone>& phones
 		}
 
 		previousDuration = duration;
+		previousPhone = phone;
 	}
 
 	return shapeRules;

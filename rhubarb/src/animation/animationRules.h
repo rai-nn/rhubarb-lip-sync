@@ -34,3 +34,6 @@ boost::optional<std::pair<Shape, TweenTiming>> getTween(Shape first, Shape secon
 // It may extend into the negative time range if animation is required prior to the sound being
 // heard.
 Timeline<ShapeSet> getShapeSets(Phone phone, centiseconds duration, centiseconds previousDuration);
+
+// Detects if a phone transition likely represents a sentence boundary based on phonetic patterns
+bool isLikelySentenceBoundary(boost::optional<Phone> prevPhone, boost::optional<Phone> nextPhone);
