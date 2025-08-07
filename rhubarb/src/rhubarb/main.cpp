@@ -253,6 +253,15 @@ int main(int platformArgc, char* platformArgv[]) {
 		cmd, false
 	);
 
+	tclap::ValueArg<int> maxVisemesPerWord(
+		"", "maxVisemesPerWord",
+		"Maximum number of visemes per word. "
+		"Reduces animation complexity by keeping only the most prominent mouth shapes per word. "
+		"Recommended: 2 for simple animation, 3-4 for more detail. "
+		"0 = disabled (default).",
+		false, 0, "number", cmd
+	);
+
 	tclap::UnlabeledValueArg<string> inputFileName(
 		"inputFile", "The input file. Must be a sound file in WAVE format.",
 		true, "", "string", cmd
@@ -335,7 +344,8 @@ int main(int platformArgc, char* platformArgv[]) {
 				maxThreadCount.getValue(),
 				progressSink,
 				noTweening.getValue(),
-				skipTimingOptimization.getValue());
+				skipTimingOptimization.getValue(),
+				maxVisemesPerWord.getValue());
 			logging::info("Done animating.");
 
 			// Export animation

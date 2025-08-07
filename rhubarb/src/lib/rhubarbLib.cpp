@@ -16,12 +16,13 @@ JoiningContinuousTimeline<Shape> animateAudioClip(
 	int maxThreadCount,
 	ProgressSink& progressSink,
 	bool noTweening,
-	bool skipTimingOptimization)
+	bool skipTimingOptimization,
+	int maxVisemesPerWord)
 {
 	const BoundedTimeline<Phone> phones =
 		recognizer.recognizePhones(audioClip, dialog, maxThreadCount, progressSink);
 	// The animation functions will use PauseDetectionConfig::getInstance() internally
-	JoiningContinuousTimeline<Shape> result = animate(phones, targetShapeSet, noTweening, skipTimingOptimization);
+	JoiningContinuousTimeline<Shape> result = animate(phones, targetShapeSet, noTweening, skipTimingOptimization, maxVisemesPerWord);
 	return result;
 }
 
@@ -33,8 +34,9 @@ JoiningContinuousTimeline<Shape> animateWaveFile(
 	int maxThreadCount,
 	ProgressSink& progressSink,
 	bool noTweening,
-	bool skipTimingOptimization)
+	bool skipTimingOptimization,
+	int maxVisemesPerWord)
 {
 	const auto audioClip = createAudioFileClip(filePath);
-	return animateAudioClip(*audioClip, dialog, recognizer, targetShapeSet, maxThreadCount, progressSink, noTweening, skipTimingOptimization);
+	return animateAudioClip(*audioClip, dialog, recognizer, targetShapeSet, maxThreadCount, progressSink, noTweening, skipTimingOptimization, maxVisemesPerWord);
 }

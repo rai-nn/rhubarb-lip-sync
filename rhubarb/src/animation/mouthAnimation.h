@@ -9,5 +9,6 @@ JoiningContinuousTimeline<Shape> animate(
 	const BoundedTimeline<Phone>& phones,
 	const ShapeSet& targetShapeSet,
 	bool noTweening = false,
-	bool skipTimingOptimization = false
+	bool skipTimingOptimization = false,
+	int maxVisemesPerWord = 0
 );

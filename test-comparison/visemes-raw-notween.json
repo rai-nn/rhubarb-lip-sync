@@ -2,7 +2,7 @@
   "metadata": {
     "audio_duration": 24.41,
     "visemes_count": 184,
-    "exported_at": "2025-08-07T20:37:39.475279Z"
+    "exported_at": "2025-08-07T21:25:31.699406Z"
   },
   "visemes": [
     {
@@ -747,16 +747,16 @@
     },
     {
       "start": 19.61,
-      "end": 19.77,
+      "end": 19.78,
       "value": "F"
     },
     {
-      "start": 19.77,
-      "end": 19.81,
+      "start": 19.78,
+      "end": 19.82,
       "value": "A"
     },
     {
-      "start": 19.81,
+      "start": 19.82,
       "end": 20.01,
       "value": "C"
     },

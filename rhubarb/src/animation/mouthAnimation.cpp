@@ -7,12 +7,14 @@
 #include "timingOptimization.h"
 #include "targetShapeSet.h"
 #include "staticSegments.h"
+#include "wordSimplification.h"
 
 JoiningContinuousTimeline<Shape> animate(
 	const BoundedTimeline<Phone>& phones,
 	const ShapeSet& targetShapeSet,
 	bool noTweening,
-	bool skipTimingOptimization
+	bool skipTimingOptimization,
+	int maxVisemesPerWord
 ) {
 	// Create timeline of shape rules
 	ContinuousTimeline<ShapeRule> shapeRules = getShapeRules(phones);
@@ -24,7 +26,7 @@ JoiningContinuousTimeline<Shape> animate(
 	shapeRules = convertToTargetShapeSet(shapeRules, targetShapeSetPlusX);
 
 	// Animate in multiple steps
-	const auto performMainAnimationSteps = [&targetShapeSet, noTweening, skipTimingOptimization](const auto& shapeRules) {
+	const auto performMainAnimationSteps = [&targetShapeSet, noTweening, skipTimingOptimization, maxVisemesPerWord](const auto& shapeRules) {
 		JoiningContinuousTimeline<Shape> animation = animateRough(shapeRules);
 		
 		// Skip timing optimization if requested
@@ -37,6 +39,11 @@ JoiningContinuousTimeline<Shape> animate(
 		// Apply tweening unless disabled
 		if (!noTweening) {
 			animation = insertTweens(animation);
+		}
+		
+		// Apply word-based simplification if requested
+		if (maxVisemesPerWord > 0) {
+			animation = simplifyByDensity(animation, maxVisemesPerWord);
 		}
 		
 		animation = convertToTargetShapeSet(animation, targetShapeSet);

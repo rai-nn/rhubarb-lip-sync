@@ -75,6 +75,25 @@ echo "4. Running with --skipTimingOptimization --noTweening..."
     -o "$OUTPUT_DIR/temp-raw-notween.json" \
     "$EXAMPLES_DIR/audio.wav" 2>&1 | grep -E "Progress:|Done." || true
 
+# Test 5: Max visemes per word (2 visemes per word)
+echo "5. Running with --maxVisemesPerWord 2..."
+"$RHUBARB_BIN" \
+    -f json \
+    --maxVisemesPerWord 2 \
+    -d "$EXAMPLES_DIR/dialogue.txt" \
+    -o "$OUTPUT_DIR/temp-max2.json" \
+    "$EXAMPLES_DIR/audio.wav" 2>&1 | grep -E "Progress:|Done." || true
+
+# Test 6: Max visemes per word with no tweening
+echo "6. Running with --maxVisemesPerWord 2 --noTweening..."
+"$RHUBARB_BIN" \
+    -f json \
+    --maxVisemesPerWord 2 \
+    --noTweening \
+    -d "$EXAMPLES_DIR/dialogue.txt" \
+    -o "$OUTPUT_DIR/temp-max2-notween.json" \
+    "$EXAMPLES_DIR/audio.wav" 2>&1 | grep -E "Progress:|Done." || true
+
 echo ""
 echo "Converting to visual tool format..."
 echo ""
@@ -123,6 +142,8 @@ python3 "$OUTPUT_DIR/convert_file.py" "$OUTPUT_DIR/temp-normal.json" "$OUTPUT_DI
 python3 "$OUTPUT_DIR/convert_file.py" "$OUTPUT_DIR/temp-notween.json" "$OUTPUT_DIR/visemes-notween.json"
 python3 "$OUTPUT_DIR/convert_file.py" "$OUTPUT_DIR/temp-raw.json" "$OUTPUT_DIR/visemes-raw.json"
 python3 "$OUTPUT_DIR/convert_file.py" "$OUTPUT_DIR/temp-raw-notween.json" "$OUTPUT_DIR/visemes-raw-notween.json"
+python3 "$OUTPUT_DIR/convert_file.py" "$OUTPUT_DIR/temp-max2.json" "$OUTPUT_DIR/visemes-max2.json"
+python3 "$OUTPUT_DIR/convert_file.py" "$OUTPUT_DIR/temp-max2-notween.json" "$OUTPUT_DIR/visemes-max2-notween.json"
 
 # Clean up temporary files
 rm -f "$OUTPUT_DIR/temp-*.json"
@@ -133,6 +154,8 @@ echo "  - $OUTPUT_DIR/visemes-normal.json (default mode)"
 echo "  - $OUTPUT_DIR/visemes-notween.json (no tweening)"
 echo "  - $OUTPUT_DIR/visemes-raw.json (skip timing optimization)"
 echo "  - $OUTPUT_DIR/visemes-raw-notween.json (skip timing + no tweening)"
+echo "  - $OUTPUT_DIR/visemes-max2.json (max 2 visemes per word)"
+echo "  - $OUTPUT_DIR/visemes-max2-notween.json (max 2 visemes per word, no tweening)"
 echo ""
 
 # Create Python analysis script if it doesn't exist
@@ -195,6 +218,8 @@ analyze_visemes('visemes-normal.json', '1. NORMAL MODE (with timing optimization
 analyze_visemes('visemes-notween.json', '2. NO TWEENING MODE (with timing optimization, no tweening)')
 analyze_visemes('visemes-raw.json', '3. SKIP TIMING OPT MODE (no timing optimization, with tweening)')
 analyze_visemes('visemes-raw-notween.json', '4. SKIP TIMING + NO TWEEN (most direct phoneme mapping)')
+analyze_visemes('visemes-max2.json', '5. MAX 2 VISEMES PER WORD (simplified for phrasing)')
+analyze_visemes('visemes-max2-notween.json', '6. MAX 2 + NO TWEEN (simplified phrasing, no tweening)')
 
 print("\n" + "=" * 60)
 print("SUMMARY")

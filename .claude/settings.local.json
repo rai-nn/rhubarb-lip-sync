@@ -12,7 +12,8 @@
       "Bash(jq:*)",
       "Bash(chmod:*)",
       "Bash(./test-comparison/test_animation_modes.sh:*)",
-      "Bash(./rhubarb:*)"
+      "Bash(./rhubarb:*)",
+      "Bash(./test_animation_modes.sh:*)"
     ],
     "deny": []
   }

@@ -302,6 +302,8 @@ add_library(rhubarb-animation
 	src/animation/timingOptimization.h
 	src/animation/tweening.cpp
 	src/animation/tweening.h
+	src/animation/wordSimplification.cpp
+	src/animation/wordSimplification.h
 )
 target_include_directories(rhubarb-animation PRIVATE "src/animation")
 target_link_libraries(rhubarb-animation

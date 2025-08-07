@@ -16,7 +16,8 @@ JoiningContinuousTimeline<Shape> animateAudioClip(
 	int maxThreadCount,
 	ProgressSink& progressSink,
 	bool noTweening = false,
-	bool skipTimingOptimization = false);
+	bool skipTimingOptimization = false,
+	int maxVisemesPerWord = 0);
 
 JoiningContinuousTimeline<Shape> animateWaveFile(
 	std::filesystem::path filePath,
@@ -26,4 +27,5 @@ JoiningContinuousTimeline<Shape> animateWaveFile(
 	int maxThreadCount,
 	ProgressSink& progressSink,
 	bool noTweening = false,
-	bool skipTimingOptimization = false);
+	bool skipTimingOptimization = false,
+	int maxVisemesPerWord = 0);
