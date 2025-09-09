@@ -3,6 +3,7 @@
 #include "tools/textFiles.h"
 #include "animation/mouthAnimation.h"
 #include "audio/audioFileReading.h"
+#include "characterTiming.h"
 
 using boost::optional;
 using std::string;
@@ -40,3 +41,4 @@ JoiningContinuousTimeline<Shape> animateWaveFile(
 	const auto audioClip = createAudioFileClip(filePath);
 	return animateAudioClip(*audioClip, dialog, recognizer, targetShapeSet, maxThreadCount, progressSink, noTweening, skipTimingOptimization, maxVisemesPerWord);
 }
+

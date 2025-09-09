@@ -14,7 +14,8 @@ string RecognizerTypeConverter::getTypeName() {
 EnumConverter<RecognizerType>::member_data RecognizerTypeConverter::getMemberData() {
 	return member_data {
 		{ RecognizerType::PocketSphinx,	"pocketSphinx" },
-		{ RecognizerType::Phonetic,		"phonetic" }
+		{ RecognizerType::Phonetic,		"phonetic" },
+		{ RecognizerType::WordTiming,	"wordTiming" }
 	};
 }
 

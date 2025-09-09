@@ -4,7 +4,8 @@
 
 enum class RecognizerType {
 	PocketSphinx,
-	Phonetic
+	Phonetic,
+	WordTiming
 };
 
 class RecognizerTypeConverter : public EnumConverter<RecognizerType> {

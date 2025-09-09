@@ -29,3 +29,4 @@ JoiningContinuousTimeline<Shape> animateWaveFile(
 	bool noTweening = false,
 	bool skipTimingOptimization = false,
 	int maxVisemesPerWord = 0);
+

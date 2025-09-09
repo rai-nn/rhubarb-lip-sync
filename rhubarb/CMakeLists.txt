@@ -385,6 +385,8 @@ target_link_libraries(rhubarb-exporters
 add_library(rhubarb-lib
 	src/lib/rhubarbLib.cpp
 	src/lib/rhubarbLib.h
+	src/lib/characterTiming.cpp
+	src/lib/characterTiming.h
 )
 target_include_directories(rhubarb-lib PRIVATE "src/lib")
 target_link_libraries(rhubarb-lib
@@ -431,6 +433,8 @@ add_library(rhubarb-recognition
 	src/recognition/Recognizer.h
 	src/recognition/tokenization.cpp
 	src/recognition/tokenization.h
+	src/recognition/WordTimingRecognizer.cpp
+	src/recognition/WordTimingRecognizer.h
 )
 target_include_directories(rhubarb-recognition PRIVATE "src/recognition")
 target_link_libraries(rhubarb-recognition

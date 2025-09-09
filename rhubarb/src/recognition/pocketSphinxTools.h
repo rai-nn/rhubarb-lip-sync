@@ -8,6 +8,7 @@
 
 extern "C" {
 #include <pocketsphinx.h>
+#include <pocketsphinx_internal.h>
 }
 
 typedef std::function<lambda_unique_ptr<ps_decoder_t>(
@@ -40,3 +41,4 @@ BoundedTimeline<std::string> recognizeWords(
 	const std::vector<int16_t>& audioBuffer,
 	ps_decoder_t& decoder
 );
+
