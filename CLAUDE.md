@@ -8,38 +8,42 @@ Rhubarb Lip Sync is a 2D mouth animation tool that analyzes audio files, recogni
 
 ## Build Commands
 
+### Quick Build (All Platforms)
+```bash
+# Build just the main Rhubarb executable (recommended)
+cd build
+cmake --build . --config Release --target rhubarb
+
+# The executable will be at: build/rhubarb/rhubarb
+```
+
 ### macOS
 ```bash
-# Build release version with packaging
+# Build release version with packaging (builds everything)
 ./package-osx.sh
 
 # Or manually:
 mkdir build && cd build
 cmake .. -G Xcode
-cmake --build . --config Release
-```
-
-### Windows
-```bash
-# Build release version with packaging
-package-win.bat
-
-# Or manually:
-mkdir build && cd build
-cmake .. -G "Visual Studio 16 2019" -A x64
-cmake --build . --config Release
+cmake --build . --config Release --target rhubarb  # Main executable only
+# OR
+cmake --build . --config Release  # Build everything (may fail on Spine integration)
 ```
 
 ### Linux
 ```bash
 mkdir build && cd build
 cmake .. -D CMAKE_C_COMPILER=gcc-10 -D CMAKE_CXX_COMPILER=g++-10
-cmake --build . --config Release
+cmake --build . --config Release --target rhubarb  # Main executable only
+# OR
+cmake --build . --config Release  # Build everything (may fail on Spine integration)
 ```
 
 ## Build Quick Reference
 
-- To build rhubarb project just cd to the /build/ folder and run `cmake --build .`
+- To build just the Rhubarb executable: `cd build && cmake --build . --target rhubarb`
+- The executable will be located at: `build/rhubarb/rhubarb`
+- Use `--target rhubarb` to avoid Java version issues with the Spine integration component
 
 ## Testing
 
@@ -110,5 +114,5 @@ cmake --build . --config Release --target runTests
 - C++17 standard required
 - CMake 3.24+ required
 - Boost headers required (1.54+)
-- Cross-platform: Windows (MSVC), macOS (Xcode), Linux (GCC/Clang)
+- Cross-platform: macOS (Xcode), Linux (GCC/Clang)
 - CI/CD via GitHub Actions (.github/workflows/ci.yml)
