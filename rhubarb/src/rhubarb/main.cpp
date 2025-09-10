@@ -21,7 +21,10 @@
 #include "exporters/TsvExporter.h"
 #include "exporters/XmlExporter.h"
 #include "exporters/JsonExporter.h"
+#include "exporters/VoiceActivityExporter.h"
 #include "animation/targetShapeSet.h"
+#include "audio/voiceActivityDetection.h"
+#include "audio/audioFileReading.h"
 #include <boost/utility/in_place_factory.hpp>
 #include "tools/platformTools.h"
 #include "sinks/MachineReadableStderrSink.h"
@@ -361,12 +364,15 @@ int main(int platformArgc, char* platformArgv[]) {
 		// Set the global instance for use throughout the application
 		PauseDetectionConfig::setInstance(pauseConfig);
 
-		unique_ptr<Exporter> exporter = createExporter(
-			exportFormat.getValue(),
-			targetShapeSet,
-			datFrameRate.getValue(),
-			datUsePrestonBlair.getValue()
-		);
+		unique_ptr<Exporter> exporter;
+		if (exportFormat.getValue() != ExportFormat::VoiceActivity) {
+			exporter = createExporter(
+				exportFormat.getValue(),
+				targetShapeSet,
+				datFrameRate.getValue(),
+				datUsePrestonBlair.getValue()
+			);
+		}
 
 		// Log the input file or character timing mode
 		if (characterTimingFile.isSet()) {
@@ -383,69 +389,95 @@ int main(int platformArgc, char* platformArgv[]) {
 				logging::log(ProgressEntry(progress));
 			});
 
-			// Animate using either character timing or audio processing
-			logging::info("Starting animation.");
-			
-			// Use a function to create the animation to avoid uninitialized timeline
-			auto createAnimation = [&]() -> JoiningContinuousTimeline<Shape> {
-				if (characterTimingFile.isSet()) {
-					// Use WordTiming recognizer with character timing data
-					string text = dialogFile.isSet() 
-						? readUtf8File(u8path(dialogFile.getValue()))
-						: readUtf8File(u8path(textFile.getValue()));
-					
-					// Create WordTiming recognizer
-					auto recognizer = createRecognizer(
-						RecognizerType::WordTiming,
-						characterTimingFile.getValue(),
-						text,
-						inputFilePath.u8string()
-					);
-					
-					return animateWaveFile(
-						inputFilePath,
-						text,
-						*recognizer,
-						targetShapeSet,
-						maxThreadCount.getValue(),
-						progressSink,
-						noTweening.getValue(),
-						skipTimingOptimization.getValue(),
-						maxVisemesPerWord.getValue());
-				} else {
-					// Use traditional audio-based processing
-					return animateWaveFile(
-						inputFilePath,
-						dialogFile.isSet()
-							? readUtf8File(u8path(dialogFile.getValue()))
-							: boost::optional<string>(),
-						*createRecognizer(recognizerType.getValue()),
-						targetShapeSet,
-						maxThreadCount.getValue(),
-						progressSink,
-						noTweening.getValue(),
-						skipTimingOptimization.getValue(),
-						maxVisemesPerWord.getValue());
+			// Check if we're in voice-detection-only mode
+			if (exportFormat.getValue() == ExportFormat::VoiceActivity) {
+				// Voice detection only mode
+				logging::info("Starting voice activity detection.");
+				
+				// Load audio file
+				const auto audioClip = createAudioFileClip(inputFilePath);
+				
+				// Perform voice activity detection
+				JoiningBoundedTimeline<void> voiceActivity = detectVoiceActivity(*audioClip, progressSink);
+				logging::info("Done detecting voice activity.");
+				
+				// Export voice activity
+				optional<std::ofstream> outputFile;
+				if (outputFileName.isSet()) {
+					outputFile = boost::in_place(u8path(outputFileName.getValue()));
+					outputFile->exceptions(std::ifstream::failbit | std::ifstream::badbit);
 				}
-			};
-			
-			JoiningContinuousTimeline<Shape> animation = createAnimation();
-			logging::info("Done animating.");
+				
+				VoiceActivityExporterInput vadExporterInput(inputFilePath, voiceActivity, pauseConfig);
+				VoiceActivityExporter vadExporter;
+				logging::info("Starting export.");
+				vadExporter.exportVoiceActivity(vadExporterInput, outputFile ? *outputFile : std::cout);
+				logging::info("Done exporting.");
+			} else {
+				// Normal animation mode
+				logging::info("Starting animation.");
+				
+				// Use a function to create the animation to avoid uninitialized timeline
+				auto createAnimation = [&]() -> JoiningContinuousTimeline<Shape> {
+					if (characterTimingFile.isSet()) {
+						// Use WordTiming recognizer with character timing data
+						string text = dialogFile.isSet() 
+							? readUtf8File(u8path(dialogFile.getValue()))
+							: readUtf8File(u8path(textFile.getValue()));
+						
+						// Create WordTiming recognizer
+						auto recognizer = createRecognizer(
+							RecognizerType::WordTiming,
+							characterTimingFile.getValue(),
+							text,
+							inputFilePath.u8string()
+						);
+						
+						return animateWaveFile(
+							inputFilePath,
+							text,
+							*recognizer,
+							targetShapeSet,
+							maxThreadCount.getValue(),
+							progressSink,
+							noTweening.getValue(),
+							skipTimingOptimization.getValue(),
+							maxVisemesPerWord.getValue());
+					} else {
+						// Use traditional audio-based processing
+						return animateWaveFile(
+							inputFilePath,
+							dialogFile.isSet()
+								? readUtf8File(u8path(dialogFile.getValue()))
+								: boost::optional<string>(),
+							*createRecognizer(recognizerType.getValue()),
+							targetShapeSet,
+							maxThreadCount.getValue(),
+							progressSink,
+							noTweening.getValue(),
+							skipTimingOptimization.getValue(),
+							maxVisemesPerWord.getValue());
+					}
+				};
+				
+				JoiningContinuousTimeline<Shape> animation = createAnimation();
+				logging::info("Done animating.");
 
-			// Export animation
-			optional<std::ofstream> outputFile;
-			if (outputFileName.isSet()) {
-				outputFile = boost::in_place(u8path(outputFileName.getValue()));
-				outputFile->exceptions(std::ifstream::failbit | std::ifstream::badbit);
+				// Export animation
+				optional<std::ofstream> outputFile;
+				if (outputFileName.isSet()) {
+					outputFile = boost::in_place(u8path(outputFileName.getValue()));
+					outputFile->exceptions(std::ifstream::failbit | std::ifstream::badbit);
+				}
+				// Use character timing file path if no audio input, otherwise use audio file path
+				path exportInputPath = characterTimingFile.isSet() 
+					? u8path(characterTimingFile.getValue()) 
+					: inputFilePath;
+				ExporterInput exporterInput = ExporterInput(exportInputPath, animation, targetShapeSet);
+				logging::info("Starting export.");
+				exporter->exportAnimation(exporterInput, outputFile ? *outputFile : std::cout);
+				logging::info("Done exporting.");
 			}
-			// Use character timing file path if no audio input, otherwise use audio file path
-			path exportInputPath = characterTimingFile.isSet() 
-				? u8path(characterTimingFile.getValue()) 
-				: inputFilePath;
-			ExporterInput exporterInput = ExporterInput(exportInputPath, animation, targetShapeSet);
-			logging::info("Starting export.");
-			exporter->exportAnimation(exporterInput, outputFile ? *outputFile : std::cout);
-			logging::info("Done exporting.");
 
 			logging::log(SuccessEntry());
 		} catch (...) {

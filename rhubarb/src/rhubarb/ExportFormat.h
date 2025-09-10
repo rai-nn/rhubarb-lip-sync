@@ -6,7 +6,8 @@ enum class ExportFormat {
 	Dat,
 	Tsv,
 	Xml,
-	Json
+	Json,
+	VoiceActivity
 };
 
 class ExportFormatConverter : public EnumConverter<ExportFormat> {

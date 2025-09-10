@@ -373,6 +373,8 @@ add_library(rhubarb-exporters
 	src/exporters/TsvExporter.h
 	src/exporters/XmlExporter.cpp
 	src/exporters/XmlExporter.h
+	src/exporters/VoiceActivityExporter.cpp
+	src/exporters/VoiceActivityExporter.h
 )
 target_include_directories(rhubarb-exporters PRIVATE "src/exporters")
 target_link_libraries(rhubarb-exporters

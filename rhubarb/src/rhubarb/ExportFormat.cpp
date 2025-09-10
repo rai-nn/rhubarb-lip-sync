@@ -16,7 +16,8 @@ EnumConverter<ExportFormat>::member_data ExportFormatConverter::getMemberData() 
 		{ ExportFormat::Dat,		"dat" },
 		{ ExportFormat::Tsv,		"tsv" },
 		{ ExportFormat::Xml,		"xml" },
-		{ ExportFormat::Json,		"json" }
+		{ ExportFormat::Json,		"json" },
+		{ ExportFormat::VoiceActivity,	"voiceActivity" }
 	};
 }
 
