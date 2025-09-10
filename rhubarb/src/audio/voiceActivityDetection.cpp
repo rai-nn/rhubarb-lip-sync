@@ -35,7 +35,9 @@ JoiningBoundedTimeline<void> detectVoiceActivity(
 	int error = WebRtcVad_Init(vadHandle);
 	if (error) throw runtime_error("Error initializing WebRTC VAD.");
 
-	const int aggressiveness = 2; // 0..3. The higher, the more is cut off.
+	// Get aggressiveness from config
+	const auto& config = PauseDetectionConfig::getInstance();
+	const int aggressiveness = config.vadAggressiveness; // 0..3. The higher, the more is cut off.
 	error = WebRtcVad_set_mode(vadHandle, aggressiveness);
 	if (error) throw runtime_error("Error setting WebRTC VAD aggressiveness.");
 
@@ -69,8 +71,7 @@ JoiningBoundedTimeline<void> detectVoiceActivity(
 	process16bitAudioClip(*audioClip, processBuffer, frameSize, progressSink);
 
 	// Fill small gaps in activity
-	// Use configurable values from PauseDetectionConfig
-	const auto& config = PauseDetectionConfig::getInstance();
+	// Config already retrieved above for aggressiveness
 	const centiseconds maxGap = config.vadMaxGap;
 	for (const auto& pair : getPairs(activity)) {
 		if (pair.second.getStart() - pair.first.getEnd() <= maxGap) {

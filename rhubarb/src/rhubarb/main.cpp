@@ -225,13 +225,15 @@ int main(int platformArgc, char* platformArgv[]) {
 	);
 
 	// Pause detection configuration arguments
+	vector<string> allowedSpeechSpeeds = {"slow", "normal", "fast"};
+	tclap::ValuesConstraint<string> speechSpeedConstraint(allowedSpeechSpeeds);
 	tclap::ValueArg<string> speechSpeed(
 		"", "speechSpeed",
 		"Preset for speech speed detection: slow, normal, or fast. "
 		"slow: Conservative pause detection for slow speech. "
 		"normal: Balanced pause detection (default). "
 		"fast: Aggressive pause detection for fast speech.",
-		false, "normal", "string", cmd
+		false, "normal", &speechSpeedConstraint, cmd
 	);
 
 	tclap::ValueArg<int> vadMaxGap(
@@ -246,6 +248,14 @@ int main(int platformArgc, char* platformArgv[]) {
 		"Minimum segment length to keep (milliseconds). "
 		"Lower values preserve shorter speech segments. Default: 30ms",
 		false, 30, "number", cmd
+	);
+	
+	tclap::ValueArg<int> vadAggressiveness(
+		"", "vadAggressiveness",
+		"WebRTC VAD aggressiveness level (0-3). "
+		"0=Quality (least aggressive), 1=Low bitrate, 2=Aggressive (default), 3=Very aggressive. "
+		"Higher values detect less as speech.",
+		false, 2, "number", cmd
 	);
 
 	tclap::ValueArg<int> microPauseThreshold(
@@ -356,6 +366,13 @@ int main(int platformArgc, char* platformArgv[]) {
 		}
 		if (vadMinSegment.isSet()) {
 			pauseConfig.vadMinSegmentLength = PauseDetectionConfig::millisecondsToCs(vadMinSegment.getValue());
+		}
+		if (vadAggressiveness.isSet()) {
+			int aggressivenessValue = vadAggressiveness.getValue();
+			if (aggressivenessValue < 0 || aggressivenessValue > 3) {
+				throw std::runtime_error("VAD aggressiveness must be between 0 and 3");
+			}
+			pauseConfig.vadAggressiveness = aggressivenessValue;
 		}
 		if (microPauseThreshold.isSet()) {
 			pauseConfig.microPauseThreshold = PauseDetectionConfig::millisecondsToCs(microPauseThreshold.getValue());

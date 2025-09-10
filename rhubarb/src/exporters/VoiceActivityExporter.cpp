@@ -53,7 +53,7 @@ void VoiceActivityExporter::exportVoiceActivity(const VoiceActivityExporterInput
 	outputStream << "    \"soundFile\": \"" << escapeJsonString(absolute(input.inputFilePath).u8string()) << "\",\n";
 	outputStream << "    \"duration\": " << std::fixed << std::setprecision(2) << totalDuration << ",\n";
 	outputStream << "    \"vadSettings\": {\n";
-	outputStream << "      \"aggressiveness\": 2,\n"; // WebRTC VAD aggressiveness is hardcoded to 2 in the implementation
+	outputStream << "      \"aggressiveness\": " << input.vadConfig.vadAggressiveness << ",\n";
 	outputStream << "      \"maxGap\": " << (input.vadConfig.vadMaxGap.count() * 10) << ",\n"; // Convert cs to ms
 	outputStream << "      \"minSegment\": " << (input.vadConfig.vadMinSegmentLength.count() * 10) << "\n"; // Convert cs to ms
 	outputStream << "    }\n";

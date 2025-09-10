@@ -7,6 +7,7 @@
 // Configuration for pause detection and voice activity detection
 struct PauseDetectionConfig {
 	// Voice Activity Detection parameters
+	int vadAggressiveness = 2;               // WebRTC VAD aggressiveness (0-3, higher = more aggressive)
 	centiseconds vadMaxGap = 6_cs;           // Maximum gap to fill between voice segments
 	centiseconds vadMinSegmentLength = 3_cs; // Minimum segment length to keep
 	
