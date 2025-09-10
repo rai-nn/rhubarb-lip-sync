@@ -15,7 +15,13 @@ typedef std::function<lambda_unique_ptr<ps_decoder_t>(
 	boost::optional<std::string> dialog
 )> decoderFactory;
 
-typedef std::function<Timeline<Phone>(
+// Structure to hold both phonemes and recognized text from utterance processing
+struct UtteranceResult {
+	Timeline<Phone> phones;
+	std::string text;
+};
+
+typedef std::function<UtteranceResult(
 	const AudioClip& audioClip,
 	TimeRange utteranceTimeRange,
 	ps_decoder_t& decoder,

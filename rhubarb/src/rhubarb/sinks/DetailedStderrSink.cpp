@@ -134,41 +134,10 @@ void DetailedStderrSink::receive(const logging::Entry& entry) {
 		// Look for specific log messages to track pipeline phases
 		const string& message = entry.message;
 		
-		// Track utterance text (but don't create duplicate events)
-		// Process this even for Debug-level messages
-		if (message.find("##utterance[") == 0) {
-				// Parse utterance time range to match with existing events
-				size_t startBracket = message.find('[');
-				size_t endBracket = message.find(']');
-				if (startBracket != string::npos && endBracket != string::npos) {
-					string timeRange = message.substr(startBracket + 1, endBracket - startBracket - 1);
-					size_t dashPos = timeRange.find('-');
-					if (dashPos != string::npos) {
-						double utteranceStart = std::stod(timeRange.substr(0, dashPos));
-						double utteranceEnd = std::stod(timeRange.substr(dashPos + 1));
-						
-						// Get utterance text
-						string utteranceText;
-						size_t colonPos = message.find(": ");
-						if (colonPos != string::npos) {
-							utteranceText = message.substr(colonPos + 2);
-						}
-						
-						// Update the text of the matching event
-						std::lock_guard<std::mutex> lock(eventMutex);
-						for (auto& event : events) {
-							if (event.isUtterance && 
-								std::abs(event.utteranceStart - utteranceStart) < 0.01 &&
-								std::abs(event.utteranceEnd - utteranceEnd) < 0.01) {
-								event.utteranceText = utteranceText;
-								break;
-							}
-						}
-					}
-				}
-		}
+		// Note: utterance text is now provided directly in UtteranceEndEntry,
+		// so we no longer need to parse ##utterance messages for text matching
 		
-		// Process other log messages only if they meet the minimum level
+		// Process log messages only if they meet the minimum level
 		if (entry.level >= minLevel) {
 			// Track phase transitions
 			// Note: VAD phase timing is now handled by explicit PhaseStartEntry/PhaseEndEntry

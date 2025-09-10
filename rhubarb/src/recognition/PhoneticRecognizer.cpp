@@ -52,7 +52,7 @@ static lambda_unique_ptr<ps_decoder_t> createDecoder(optional<std::string> dialo
 	return decoder;
 }
 
-static Timeline<Phone> utteranceToPhones(
+static UtteranceResult utteranceToPhones(
 	const AudioClip& audioClip,
 	TimeRange utteranceTimeRange,
 	ps_decoder_t& decoder,
@@ -100,7 +100,8 @@ static Timeline<Phone> utteranceToPhones(
 
 	utteranceProgressSink.reportProgress(1.0);
 
-	return utterancePhones;
+	// PhoneticRecognizer doesn't produce text (only individual phonemes)
+	return UtteranceResult{ utterancePhones, "" };
 }
 
 BoundedTimeline<Phone> PhoneticRecognizer::recognizePhones(

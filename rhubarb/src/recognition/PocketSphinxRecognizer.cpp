@@ -248,7 +248,7 @@ string fixPronunciation(const string& word) {
 	return pair != replacements.end() ? pair->second : word;
 }
 
-static Timeline<Phone> utteranceToPhones(
+static UtteranceResult utteranceToPhones(
 	const AudioClip& audioClip,
 	TimeRange utteranceTimeRange,
 	ps_decoder_t& decoder,
@@ -329,7 +329,7 @@ static Timeline<Phone> utteranceToPhones(
 		logTimedEvent("phone", timedPhone);
 	}
 
-	return utterancePhones;
+	return UtteranceResult{ utterancePhones, text };
 }
 
 BoundedTimeline<Phone> PocketSphinxRecognizer::recognizePhones(

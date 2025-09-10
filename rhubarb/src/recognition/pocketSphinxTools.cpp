@@ -130,18 +130,18 @@ BoundedTimeline<Phone> recognizePhones(
 		int utteranceIndex = utteranceCounter.fetch_add(1) + 1;
 		auto processingStart = std::chrono::steady_clock::now();
 		
-		// Log utterance start
+		// Log utterance start (text not available yet)
 		logging::log(UtteranceStartEntry(
 			utteranceIndex, 
 			totalUtterances,
 			timedUtterance.getTimeRange().getStart().count() / 100.0, // Convert centiseconds to seconds
 			timedUtterance.getTimeRange().getEnd().count() / 100.0, // Convert centiseconds to seconds
-			"" // Text will be filled in by utteranceToPhones function
+			"" // Text not available at start
 		));
 		
 		// Detect phones for utterance
 		const auto decoder = decoderPool.acquire();
-		Timeline<Phone> utterancePhones = utteranceToPhones(
+		UtteranceResult utteranceResult = utteranceToPhones(
 			*audioClip,
 			timedUtterance.getTimeRange(),
 			*decoder,
@@ -152,19 +152,19 @@ BoundedTimeline<Phone> recognizePhones(
 		auto processingEnd = std::chrono::steady_clock::now();
 		double processingDuration = std::chrono::duration<double>(processingEnd - processingStart).count();
 		
-		// Log utterance end (text will be updated by the actual logging in utteranceToPhones)
+		// Log utterance end with the actual recognized text
 		logging::log(UtteranceEndEntry(
 			utteranceIndex, 
 			totalUtterances,
 			timedUtterance.getTimeRange().getStart().count() / 100.0, // Convert centiseconds to seconds
 			timedUtterance.getTimeRange().getEnd().count() / 100.0, // Convert centiseconds to seconds
-			"", // Text will be available from the ##utterance logs
+			utteranceResult.text, // Now we have the actual text
 			processingDuration
 		));
 
 		// Copy phones to result timeline
 		std::lock_guard<std::mutex> lock(resultMutex);
-		for (const auto& timedPhone : utterancePhones) {
+		for (const auto& timedPhone : utteranceResult.phones) {
 			phones.set(timedPhone);
 		}
 	};
