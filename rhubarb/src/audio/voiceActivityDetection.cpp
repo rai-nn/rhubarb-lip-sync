@@ -10,6 +10,8 @@
 #include "tools/parallel.h"
 #include <webrtc/common_audio/vad/vad_core.h>
 #include "../rhubarb/PauseDetectionConfig.h"
+#include "../rhubarb/semanticEntries.h"
+#include <chrono>
 
 using std::vector;
 using boost::adaptors::transformed;
@@ -21,6 +23,10 @@ JoiningBoundedTimeline<void> detectVoiceActivity(
 	const AudioClip& inputAudioClip,
 	ProgressSink& progressSink
 ) {
+	// Start phase tracking
+	auto phaseStart = std::chrono::steady_clock::now();
+	logging::log(PhaseStartEntry("VoiceActivityDetection"));
+	
 	// Prepare audio for VAD
 	constexpr int webRtcSamplingRate = 8000;
 	const unique_ptr<AudioClip> audioClip = inputAudioClip.clone()
@@ -95,6 +101,44 @@ JoiningBoundedTimeline<void> detectVoiceActivity(
 			return format("{0}-{1}", t.getStart(), t.getEnd());
 		}), ", ")
 	);
+
+	// Calculate segment statistics
+	int speechSegments = activity.size();
+	int silenceSegments = 0;
+	
+	// Count silence segments: gaps between speech segments, plus potential leading/trailing silences
+	if (speechSegments > 0) {
+		// Check for leading silence
+		auto firstSegment = activity.begin();
+		if (firstSegment->getStart() > inputAudioClip.getTruncatedRange().getStart()) {
+			silenceSegments++;
+		}
+		
+		// Count gaps between speech segments
+		auto prev = activity.begin();
+		for (auto it = std::next(activity.begin()); it != activity.end(); ++it, ++prev) {
+			if (it->getStart() > prev->getEnd()) {
+				silenceSegments++;
+			}
+		}
+		
+		// Check for trailing silence
+		auto lastSegment = std::prev(activity.end());
+		if (lastSegment->getEnd() < inputAudioClip.getTruncatedRange().getEnd()) {
+			silenceSegments++;
+		}
+	} else {
+		// No speech segments means the entire audio is silence
+		silenceSegments = 1;
+	}
+	
+	// Log the segment statistics
+	logging::log(VoiceActivityEntry(speechSegments, silenceSegments));
+
+	// End phase tracking
+	auto phaseEnd = std::chrono::steady_clock::now();
+	double duration = std::chrono::duration<double>(phaseEnd - phaseStart).count();
+	logging::log(PhaseEndEntry("VoiceActivityDetection", duration));
 
 	return activity;
 }

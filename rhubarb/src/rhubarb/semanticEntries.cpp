@@ -37,3 +37,156 @@ FailureEntry::FailureEntry(const string& reason) :
 string FailureEntry::getReason() const {
 	return reason;
 }
+
+PhaseStartEntry::PhaseStartEntry(const string& phaseName, int totalItems) :
+	SemanticEntry(Level::Info, fmt::format("Phase started: {}", phaseName)),
+	phaseName(phaseName),
+	totalItems(totalItems)
+{}
+
+string PhaseStartEntry::getPhaseName() const {
+	return phaseName;
+}
+
+int PhaseStartEntry::getTotalItems() const {
+	return totalItems;
+}
+
+PhaseEndEntry::PhaseEndEntry(const string& phaseName, double duration) :
+	SemanticEntry(Level::Info, fmt::format("Phase completed: {} ({:.2f}s)", phaseName, duration)),
+	phaseName(phaseName),
+	duration(duration)
+{}
+
+string PhaseEndEntry::getPhaseName() const {
+	return phaseName;
+}
+
+double PhaseEndEntry::getDuration() const {
+	return duration;
+}
+
+UtteranceEntry::UtteranceEntry(int index, int total, double startTime, double endTime, const string& text) :
+	SemanticEntry(Level::Debug, fmt::format("Utterance {}/{} ({:.2f}-{:.2f}s): {}", index, total, startTime, endTime, text)),
+	index(index),
+	total(total),
+	startTime(startTime),
+	endTime(endTime),
+	text(text)
+{}
+
+int UtteranceEntry::getIndex() const {
+	return index;
+}
+
+int UtteranceEntry::getTotal() const {
+	return total;
+}
+
+double UtteranceEntry::getStartTime() const {
+	return startTime;
+}
+
+double UtteranceEntry::getEndTime() const {
+	return endTime;
+}
+
+string UtteranceEntry::getText() const {
+	return text;
+}
+
+AudioMetadataEntry::AudioMetadataEntry(double duration, int sampleRate, int channelCount) :
+	SemanticEntry(Level::Debug, fmt::format("Audio metadata: {:.2f}s, {}Hz, {} channel(s)", duration, sampleRate, channelCount)),
+	duration(duration),
+	sampleRate(sampleRate),
+	channelCount(channelCount)
+{}
+
+double AudioMetadataEntry::getDuration() const {
+	return duration;
+}
+
+int AudioMetadataEntry::getSampleRate() const {
+	return sampleRate;
+}
+
+int AudioMetadataEntry::getChannelCount() const {
+	return channelCount;
+}
+
+VoiceActivityEntry::VoiceActivityEntry(int speechSegments, int silenceSegments) :
+	SemanticEntry(Level::Debug, fmt::format("Voice activity segments: {} speech, {} silence", speechSegments, silenceSegments)),
+	speechSegments(speechSegments),
+	silenceSegments(silenceSegments)
+{}
+
+int VoiceActivityEntry::getSpeechSegments() const {
+	return speechSegments;
+}
+
+int VoiceActivityEntry::getSilenceSegments() const {
+	return silenceSegments;
+}
+
+UtteranceStartEntry::UtteranceStartEntry(int index, int total, double startTime, double endTime, const string& text) :
+	SemanticEntry(Level::Debug, fmt::format("Utterance {}/{} starting ({:.2f}-{:.2f}s): {}", index, total, startTime, endTime, text)),
+	index(index),
+	total(total),
+	startTime(startTime),
+	endTime(endTime),
+	text(text)
+{}
+
+int UtteranceStartEntry::getIndex() const {
+	return index;
+}
+
+int UtteranceStartEntry::getTotal() const {
+	return total;
+}
+
+double UtteranceStartEntry::getStartTime() const {
+	return startTime;
+}
+
+double UtteranceStartEntry::getEndTime() const {
+	return endTime;
+}
+
+string UtteranceStartEntry::getText() const {
+	return text;
+}
+
+UtteranceEndEntry::UtteranceEndEntry(int index, int total, double startTime, double endTime, const string& text, double processingDuration) :
+	SemanticEntry(Level::Debug, fmt::format("Utterance {}/{} completed ({:.2f}-{:.2f}s, processed in {:.2f}s): {}", index, total, startTime, endTime, processingDuration, text)),
+	index(index),
+	total(total),
+	startTime(startTime),
+	endTime(endTime),
+	text(text),
+	processingDuration(processingDuration)
+{}
+
+int UtteranceEndEntry::getIndex() const {
+	return index;
+}
+
+int UtteranceEndEntry::getTotal() const {
+	return total;
+}
+
+double UtteranceEndEntry::getStartTime() const {
+	return startTime;
+}
+
+double UtteranceEndEntry::getEndTime() const {
+	return endTime;
+}
+
+string UtteranceEndEntry::getText() const {
+	return text;
+}
+
+double UtteranceEndEntry::getProcessingDuration() const {
+	return processingDuration;
+}

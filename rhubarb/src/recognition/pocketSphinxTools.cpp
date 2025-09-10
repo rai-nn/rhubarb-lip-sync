@@ -7,6 +7,9 @@
 #include "tools/parallel.h"
 #include "tools/ObjectPool.h"
 #include "time/timedLogging.h"
+#include "../rhubarb/semanticEntries.h"
+#include <chrono>
+#include <atomic>
 
 extern "C" {
 #include <sphinxbase/err.h>
@@ -109,13 +112,33 @@ BoundedTimeline<Phone> recognizePhones(
 
 	redirectPocketSphinxOutput();
 
+	// Start speech recognition phase
+	auto recognitionStart = std::chrono::steady_clock::now();
+	logging::log(PhaseStartEntry("SpeechRecognition", utterances.size()));
+	
 	// Prepare pool of decoders
 	ObjectPool<ps_decoder_t, lambda_unique_ptr<ps_decoder_t>> decoderPool(
 		[&] { return createDecoder(dialog); });
 
 	BoundedTimeline<Phone> phones(audioClip->getTruncatedRange());
 	std::mutex resultMutex;
+	std::atomic<int> utteranceCounter(0);
+	const int totalUtterances = utterances.size();
+	
 	const auto processUtterance = [&](Timed<void> timedUtterance, ProgressSink& utteranceProgressSink) {
+		// Get utterance index and track processing start time
+		int utteranceIndex = utteranceCounter.fetch_add(1) + 1;
+		auto processingStart = std::chrono::steady_clock::now();
+		
+		// Log utterance start
+		logging::log(UtteranceStartEntry(
+			utteranceIndex, 
+			totalUtterances,
+			timedUtterance.getTimeRange().getStart().count() / 100.0, // Convert centiseconds to seconds
+			timedUtterance.getTimeRange().getEnd().count() / 100.0, // Convert centiseconds to seconds
+			"" // Text will be filled in by utteranceToPhones function
+		));
+		
 		// Detect phones for utterance
 		const auto decoder = decoderPool.acquire();
 		Timeline<Phone> utterancePhones = utteranceToPhones(
@@ -124,6 +147,20 @@ BoundedTimeline<Phone> recognizePhones(
 			*decoder,
 			utteranceProgressSink
 		);
+
+		// Calculate processing duration
+		auto processingEnd = std::chrono::steady_clock::now();
+		double processingDuration = std::chrono::duration<double>(processingEnd - processingStart).count();
+		
+		// Log utterance end (text will be updated by the actual logging in utteranceToPhones)
+		logging::log(UtteranceEndEntry(
+			utteranceIndex, 
+			totalUtterances,
+			timedUtterance.getTimeRange().getStart().count() / 100.0, // Convert centiseconds to seconds
+			timedUtterance.getTimeRange().getEnd().count() / 100.0, // Convert centiseconds to seconds
+			"", // Text will be available from the ##utterance logs
+			processingDuration
+		));
 
 		// Copy phones to result timeline
 		std::lock_guard<std::mutex> lock(resultMutex);
@@ -138,19 +175,24 @@ BoundedTimeline<Phone> recognizePhones(
 
 	// Perform speech recognition
 	try {
+		// Calculate all thread constraints for debugging
+		int maxThreads = maxThreadCount;
+		int utteranceCount = static_cast<int>(utterances.size());
+		double audioDurationSeconds = duration_cast<std::chrono::seconds>(audioClip->getTruncatedRange().getDuration()).count();
+		
 		// Determine how many parallel threads to use
 		int threadCount = std::min({
-			maxThreadCount,
+			maxThreads,
 			// Don't use more threads than there are utterances to be processed
-			static_cast<int>(utterances.size()),
-			// Don't waste time creating additional threads (and decoders!) if the recording is short
-			static_cast<int>(
-				duration_cast<std::chrono::seconds>(audioClip->getTruncatedRange().getDuration()).count() / 5
-			)
+			utteranceCount
 		});
 		if (threadCount < 1) {
 			threadCount = 1;
 		}
+		
+		// Debug logging to understand thread allocation
+		logging::debugFormat("Thread allocation constraints: maxThreads={}, utteranceCount={}, audioDuration={}s, finalThreadCount={}", 
+			maxThreads, utteranceCount, audioDurationSeconds, threadCount);
 		logging::debugFormat("Speech recognition using {} threads -- start", threadCount);
 		runParallel(
 			"speech recognition (PocketSphinx tools)",
@@ -161,6 +203,11 @@ BoundedTimeline<Phone> recognizePhones(
 			getUtteranceProgressWeight
 		);
 		logging::debug("Speech recognition -- end");
+		
+		// End speech recognition phase
+		auto recognitionEnd = std::chrono::steady_clock::now();
+		double duration = std::chrono::duration<double>(recognitionEnd - recognitionStart).count();
+		logging::log(PhaseEndEntry("SpeechRecognition", duration));
 	} catch (...) {
 		std::throw_with_nested(runtime_error("Error performing speech recognition via PocketSphinx tools."));
 	}

@@ -8,6 +8,8 @@
 #include "targetShapeSet.h"
 #include "staticSegments.h"
 #include "wordSimplification.h"
+#include "../rhubarb/semanticEntries.h"
+#include <chrono>
 
 JoiningContinuousTimeline<Shape> animate(
 	const BoundedTimeline<Phone>& phones,
@@ -16,6 +18,10 @@ JoiningContinuousTimeline<Shape> animate(
 	bool skipTimingOptimization,
 	int maxVisemesPerWord
 ) {
+	// Start animation phase
+	auto animationStart = std::chrono::steady_clock::now();
+	logging::log(PhaseStartEntry("AnimationGeneration"));
+	
 	// Create timeline of shape rules
 	ContinuousTimeline<ShapeRule> shapeRules = getShapeRules(phones);
 
@@ -55,6 +61,11 @@ JoiningContinuousTimeline<Shape> animate(
 	for (const auto& timedShape : result) {
 		logTimedEvent("shape", timedShape);
 	}
+
+	// End animation phase
+	auto animationEnd = std::chrono::steady_clock::now();
+	double duration = std::chrono::duration<double>(animationEnd - animationStart).count();
+	logging::log(PhaseEndEntry("AnimationGeneration", duration));
 
 	return result;
 }

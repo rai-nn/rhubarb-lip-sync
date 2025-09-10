@@ -30,6 +30,7 @@
 #include "sinks/MachineReadableStderrSink.h"
 #include "sinks/NiceStderrSink.h"
 #include "sinks/QuietStderrSink.h"
+#include "sinks/DetailedStderrSink.h"
 #include "semanticEntries.h"
 #include "RecognizerType.h"
 #include "recognition/PocketSphinxRecognizer.h"
@@ -185,6 +186,11 @@ int main(int platformArgc, char* platformArgv[]) {
 		cmd, false
 	);
 
+	tclap::SwitchArg detailedMode(
+		"", "detailed", "Shows detailed pipeline execution summary after completion.",
+		cmd, false
+	);
+
 	tclap::ValueArg<int> maxThreadCount(
 		"", "threads", "The maximum number of worker threads to use.",
 		false, getProcessorCoreCount(), "number", cmd
@@ -321,6 +327,13 @@ int main(int platformArgc, char* platformArgv[]) {
 			logging::addSink(make_shared<QuietStderrSink>(consoleLevel.getValue()));
 		} else if (machineReadableMode.getValue()) {
 			logging::addSink(make_shared<MachineReadableStderrSink>(consoleLevel.getValue()));
+		} else if (detailedMode.getValue()) {
+			// Always include threads in detailed mode
+			// Use Debug level for DetailedStderrSink to capture all metrics
+			// Pass thread configuration information
+			bool threadLimitExplicit = maxThreadCount.isSet();
+			int threadLimitValue = maxThreadCount.getValue();
+			logging::addSink(make_shared<DetailedStderrSink>(logging::Level::Debug, true, false, threadLimitValue, threadLimitExplicit));
 		} else {
 			logging::addSink(make_shared<NiceStderrSink>(consoleLevel.getValue()));
 		}

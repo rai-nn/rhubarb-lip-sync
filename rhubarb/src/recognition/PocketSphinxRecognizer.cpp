@@ -9,6 +9,7 @@
 #include "time/ContinuousTimeline.h"
 #include "audio/processing.h"
 #include "time/timedLogging.h"
+#include "../rhubarb/semanticEntries.h"
 
 extern "C" {
 #include <state_align_search.h>

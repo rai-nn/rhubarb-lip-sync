@@ -3,3 +3,5 @@ build/
 *.user
 /examples
 time-improvement
+progress.md
+output.txt

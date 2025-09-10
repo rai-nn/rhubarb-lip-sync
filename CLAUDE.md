@@ -116,3 +116,4 @@ cmake --build . --config Release --target runTests
 - Boost headers required (1.54+)
 - Cross-platform: macOS (Xcode), Linux (GCC/Clang)
 - CI/CD via GitHub Actions (.github/workflows/ci.yml)
+- when running rhubarb command line for testing purposes is needed, you can find wav files in /resources/audio.wav.

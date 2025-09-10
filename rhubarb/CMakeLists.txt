@@ -512,6 +512,8 @@ add_executable(rhubarb
 	src/rhubarb/sinks/NiceStderrSink.h
 	src/rhubarb/sinks/QuietStderrSink.cpp
 	src/rhubarb/sinks/QuietStderrSink.h
+	src/rhubarb/sinks/DetailedStderrSink.cpp
+	src/rhubarb/sinks/DetailedStderrSink.h
 	src/rhubarb/main.cpp
 	src/rhubarb/ExportFormat.cpp
 	src/rhubarb/ExportFormat.h
