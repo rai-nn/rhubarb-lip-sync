@@ -15,8 +15,8 @@ This document provides a comprehensive overview of the Rhubarb Lip Sync pipeline
 Rhubarb Lip Sync is a C++17 application that converts audio recordings into mouth shape animations (visemes) for 2D animation. The pipeline follows these main stages:
 
 ```
-Audio Input → Voice Activity Detection → Speech Recognition → Phoneme Detection → 
-Shape Rule Generation → Animation → Optimization → Export
+Audio Input → Voice Activity Detection → Speech Recognition (with Phoneme Detection) → 
+Animation (Shape Rules → Rough Animation → Optimization → Tweening) → Export
 ```
 
 ## Pipeline Stages
@@ -53,6 +53,13 @@ Key entry functions:
 
 ### 3. Speech Recognition
 
+The speech recognition phase converts audio segments into phonemes with precise timing. This phase includes:
+- Decoder initialization with language models
+- Parallel utterance processing
+- Word recognition (for word-based recognizers)
+- Phoneme extraction with timing
+- Noise sound detection for unrecognized segments
+
 Three recognizer implementations:
 
 #### PocketSphinx Recognizer (`recognition/PocketSphinxRecognizer.cpp`)
@@ -61,6 +68,7 @@ Three recognizer implementations:
 - Creates biased language model if dialog text provided
 - Performs forced alignment to get phoneme timings
 - Dictionary-based with G2P fallback for unknown words
+- Detects noise sounds in utterances without recognized phones
 
 #### Phonetic Recognizer (`recognition/PhoneticRecognizer.cpp`)
 - Language-independent recognizer
@@ -73,12 +81,17 @@ Three recognizer implementations:
 - Performs forced alignment based on known boundaries
 - Most accurate when timing data available
 
-### 4. Phoneme-to-Shape Mapping
+**For detailed breakdown of all speech recognition sub-steps, see [SPEECH_RECOGNITION_PHASE.md](SPEECH_RECOGNITION_PHASE.md)**
+
+### 4. Animation Generation
+
+The animation phase transforms phonemes into visual mouth shapes:
 
 #### Shape Rules (`animation/ShapeRule.cpp`)
-- Maps phonemes to possible mouth shapes
-- `getShapeRules()` creates timeline of shape rules
-- Handles sentence boundaries and micro-pauses
+- `getShapeRules()` creates timeline of shape rules from phonemes
+- Maps each phoneme to possible mouth shapes
+- Detects sentence boundaries in fast speech
+- Inserts micro-pauses for visual separation
 - Each phoneme can map to multiple valid shapes
 
 #### Animation Rules (`animation/animationRules.cpp`)
@@ -104,17 +117,16 @@ AY → C/D→B
 OW → E→F
 ```
 
-### 5. Animation Generation
-
-#### Main Animation (`animation/mouthAnimation.cpp`)
-Pipeline within `animate()`:
-1. Create shape rules from phonemes
-2. Convert to target shape set
-3. Generate rough animation
-4. Optimize timing (optional)
-5. Animate pauses
-6. Insert tweens (optional)
-7. Apply word simplification (optional)
+#### Main Animation Pipeline (`animation/mouthAnimation.cpp`)
+The `animate()` function orchestrates these steps:
+1. Create shape rules from phonemes (`getShapeRules()`)
+2. Convert to target shape set (add Shape::X for pauses)
+3. Generate rough animation (`animateRough()`)
+4. Optimize timing (`optimizeTiming()`, optional)
+5. Animate pauses (`animatePauses()`)
+6. Insert tweens (`insertTweens()`, optional)
+7. Apply word simplification (`simplifyByDensity()`, optional)
+8. Final conversion to target shape set
 
 #### Rough Animation (`animation/roughAnimation.cpp`)
 - Initial shape assignment
@@ -143,7 +155,7 @@ Pipeline within `animate()`:
 - Controlled by `--maxVisemesPerWord`
 - Keeps most prominent shapes
 
-### 6. Export
+### 5. Export
 
 #### Export Formats
 
@@ -185,6 +197,34 @@ Pipeline within `animate()`:
 - Moho/OpenToonz format
 - Frame-based output
 - Optional Preston Blair naming
+
+## Phase Boundaries and Responsibilities
+
+### Speech Recognition Phase
+**Outputs**: Timeline of phonemes with precise timing
+**Responsibilities**:
+- Voice activity detection
+- Word recognition (if applicable)
+- Phoneme extraction and alignment
+- Noise sound detection for unrecognized segments
+- Parallel utterance processing
+
+**Does NOT handle**:
+- Shape rules or visual decisions
+- Sentence boundary detection
+- Any mouth shape mapping
+
+### Animation Phase
+**Input**: Timeline of phonemes from speech recognition
+**Outputs**: Timeline of mouth shapes (visemes)
+**Responsibilities**:
+- Shape rule generation from phonemes
+- Sentence boundary detection and micro-pauses
+- Rough animation generation
+- Timing optimization
+- Pause animation
+- Tweening between shapes
+- Word-based simplification
 
 ## Key Components
 
@@ -286,19 +326,34 @@ rhubarb/src/
    main() → animateWaveFile() → animateAudioClip() → 
    recognizer.recognizePhones() → animate() → exporter.exportAnimation()
    ```
+   - `recognizePhones()` returns `BoundedTimeline<Phone>`
+   - `animate()` takes phones and returns `JoiningContinuousTimeline<Shape>`
 
-2. **Animation Pipeline**:
-   ```cpp
-   animate() → getShapeRules() → animateRough() → 
-   optimizeTiming() → animatePauses() → insertTweens() → 
-   simplifyByDensity() → convertToTargetShapeSet()
-   ```
-
-3. **Recognition Pipeline**:
+2. **Speech Recognition Pipeline** (`pocketSphinxTools.cpp`):
    ```cpp
    recognizePhones() → detectVoiceActivity() → 
-   utteranceToPhones() → getPhoneAlignment()
+   parallel: utteranceToPhones() → [
+     recognizeWords() → getPhoneAlignment() → getNoiseSounds()
+   ] → merge results to BoundedTimeline<Phone>
    ```
+   - Each utterance processed in parallel
+   - `getNoiseSounds()` called per utterance, not globally
+   - Results merged via mutex-protected timeline
+
+3. **Animation Pipeline** (`mouthAnimation.cpp`):
+   ```cpp
+   animate(phones) → 
+     getShapeRules(phones) →           // First step: convert phones to shape rules
+     animateRough(shapeRules) → 
+     optimizeTiming(animation) → 
+     animatePauses(animation) → 
+     insertTweens(animation) → 
+     simplifyByDensity(animation) → 
+     convertToTargetShapeSet(animation)
+   ```
+   - Input: phonemes with timing
+   - Output: visemes with timing
+   - All visual decisions made here
 
 ### Key Algorithms
 
@@ -306,24 +361,35 @@ rhubarb/src/
 - Effort matrix for shape transitions
 - Closest shape selection based on effort
 - Considers visual similarity and transition smoothness
+- Part of ANIMATION phase, not speech recognition
 
-#### Timing Optimization
+#### Timing Optimization (`timingOptimization.cpp`)
 - Minimum duration: 7 centiseconds
 - Representative shape selection by duration
 - Prioritizes visually distinct shapes (D over C)
+- Operates on shapes, not phonemes
 
-#### Tween Generation
+#### Tween Generation (`tweening.cpp`)
 - Predefined transition rules
 - Early/centered/late timing options
 - Asymmetric rules (fast open, slow close)
+- Purely visual animation concern
+
+#### Noise Detection (`pocketSphinxTools.cpp::getNoiseSounds`)
+- Finds utterance segments without recognized phones
+- Minimum duration threshold: 12 centiseconds
+- Executed WITHIN utterance processing loop
+- Part of SPEECH RECOGNITION phase
 
 ### Performance Considerations
 
-- Multi-threaded processing (configurable)
+- Multi-threaded processing (configurable per utterance)
 - Progress reporting via ProgressSink
 - Efficient timeline operations with joining
-- Audio resampling only when needed
+- Audio resampling only when needed (8kHz for VAD, 16kHz for recognition)
 - Caching of language models
+- Decoder pooling for efficient parallel processing
+- Mutex-protected timeline updates for thread safety
 
 ### Error Handling
 
