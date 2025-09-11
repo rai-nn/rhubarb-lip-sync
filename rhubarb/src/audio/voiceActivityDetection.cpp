@@ -27,11 +27,19 @@ JoiningBoundedTimeline<void> detectVoiceActivity(
 	auto phaseStart = std::chrono::steady_clock::now();
 	logging::log(PhaseStartEntry("VoiceActivityDetection"));
 	
+	// Sub-phase 2.1: Audio Preparation
+	auto subPhaseStart = std::chrono::steady_clock::now();
+	
 	// Prepare audio for VAD
 	constexpr int webRtcSamplingRate = 8000;
 	const unique_ptr<AudioClip> audioClip = inputAudioClip.clone()
 		| resample(webRtcSamplingRate)
 		| removeDcOffset();
+	
+	// Log sub-phase 2.1 timing
+	auto subPhaseEnd = std::chrono::steady_clock::now();
+	double subPhaseDuration = std::chrono::duration<double>(subPhaseEnd - subPhaseStart).count();
+	logging::log(SubPhaseTimingEntry("VoiceActivityDetection", "2.1: Audio Preparation", subPhaseDuration));
 
 	VadInst* vadHandle = WebRtcVad_Create();
 	if (!vadHandle) throw runtime_error("Error creating WebRTC VAD handle.");
@@ -47,6 +55,9 @@ JoiningBoundedTimeline<void> detectVoiceActivity(
 	error = WebRtcVad_set_mode(vadHandle, aggressiveness);
 	if (error) throw runtime_error("Error setting WebRTC VAD aggressiveness.");
 
+	// Sub-phase 2.2: WebRTC VAD Processing
+	subPhaseStart = std::chrono::steady_clock::now();
+	
 	// Detect activity
 	JoiningBoundedTimeline<void> activity(audioClip->getTruncatedRange());
 	centiseconds time = 0_cs;
@@ -75,6 +86,14 @@ JoiningBoundedTimeline<void> detectVoiceActivity(
 		time += 1_cs;
 	};
 	process16bitAudioClip(*audioClip, processBuffer, frameSize, progressSink);
+	
+	// Log sub-phase 2.2 timing
+	subPhaseEnd = std::chrono::steady_clock::now();
+	subPhaseDuration = std::chrono::duration<double>(subPhaseEnd - subPhaseStart).count();
+	logging::log(SubPhaseTimingEntry("VoiceActivityDetection", "2.2: WebRTC VAD Processing", subPhaseDuration));
+	
+	// Sub-phase 2.3: Activity Refinement
+	subPhaseStart = std::chrono::steady_clock::now();
 
 	// Fill small gaps in activity
 	// Config already retrieved above for aggressiveness
@@ -93,6 +112,14 @@ JoiningBoundedTimeline<void> detectVoiceActivity(
 			activity.clear(segment.getTimeRange());
 		}
 	}
+	
+	// Log sub-phase 2.3 timing
+	subPhaseEnd = std::chrono::steady_clock::now();
+	subPhaseDuration = std::chrono::duration<double>(subPhaseEnd - subPhaseStart).count();
+	logging::log(SubPhaseTimingEntry("VoiceActivityDetection", "2.3: Activity Refinement", subPhaseDuration));
+	
+	// Sub-phase 2.4: Timeline Generation
+	subPhaseStart = std::chrono::steady_clock::now();
 
 	logging::debugFormat(
 		"Found {} sections of voice activity: {}",
@@ -134,6 +161,28 @@ JoiningBoundedTimeline<void> detectVoiceActivity(
 	
 	// Log the segment statistics
 	logging::log(VoiceActivityEntry(speechSegments, silenceSegments));
+	
+	// Log sub-phase 2.4 timing
+	subPhaseEnd = std::chrono::steady_clock::now();
+	subPhaseDuration = std::chrono::duration<double>(subPhaseEnd - subPhaseStart).count();
+	logging::log(SubPhaseTimingEntry("VoiceActivityDetection", "2.4: Timeline Generation", subPhaseDuration));
+
+	// Calculate voice activity timeline output
+	double totalDuration = inputAudioClip.getTruncatedRange().getDuration().count() / 100.0; // Convert from centiseconds to seconds
+	double speechTime = 0.0;
+	std::vector<std::pair<double, double>> speechSegmentPairs;
+	
+	for (const auto& segment : activity) {
+		double segmentStart = segment.getStart().count() / 100.0;
+		double segmentEnd = segment.getEnd().count() / 100.0;
+		speechTime += (segmentEnd - segmentStart);
+		speechSegmentPairs.push_back({segmentStart, segmentEnd});
+	}
+	
+	double silenceTime = totalDuration - speechTime;
+	
+	// Log the voice activity timeline output
+	logging::log(VoiceActivityTimelineEntry(totalDuration, speechTime, silenceTime, speechSegmentPairs));
 
 	// End phase tracking
 	auto phaseEnd = std::chrono::steady_clock::now();

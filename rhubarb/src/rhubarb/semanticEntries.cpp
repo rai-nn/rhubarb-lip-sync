@@ -204,3 +204,60 @@ string UtteranceEndEntry::getText() const {
 double UtteranceEndEntry::getProcessingDuration() const {
 	return processingDuration;
 }
+
+SubPhaseTimingEntry::SubPhaseTimingEntry(const string& phaseName, const string& subPhaseName, double duration) :
+	SemanticEntry(logging::Level::Debug, fmt::format("Sub-phase timing: {}/{} - {:.2f}s", phaseName, subPhaseName, duration)),
+	phaseName(phaseName),
+	subPhaseName(subPhaseName),
+	duration(duration)
+{}
+
+string SubPhaseTimingEntry::getPhaseName() const {
+	return phaseName;
+}
+
+string SubPhaseTimingEntry::getSubPhaseName() const {
+	return subPhaseName;
+}
+
+double SubPhaseTimingEntry::getDuration() const {
+	return duration;
+}
+
+VoiceActivityTimelineEntry::VoiceActivityTimelineEntry(
+	double totalDuration,
+	double speechTime,
+	double silenceTime,
+	const std::vector<std::pair<double, double>>& speechSegments
+) :
+	SemanticEntry(Level::Debug, fmt::format("Voice activity timeline: {:.2f}s total, {:.2f}s speech ({:.1f}%), {:.2f}s silence ({:.1f}%)", 
+		totalDuration, speechTime, (speechTime/totalDuration)*100, silenceTime, (silenceTime/totalDuration)*100)),
+	totalDuration(totalDuration),
+	speechTime(speechTime),
+	silenceTime(silenceTime),
+	speechSegments(speechSegments)
+{}
+
+double VoiceActivityTimelineEntry::getTotalDuration() const {
+	return totalDuration;
+}
+
+double VoiceActivityTimelineEntry::getSpeechTime() const {
+	return speechTime;
+}
+
+double VoiceActivityTimelineEntry::getSilenceTime() const {
+	return silenceTime;
+}
+
+double VoiceActivityTimelineEntry::getSpeechPercentage() const {
+	return totalDuration > 0 ? (speechTime / totalDuration) * 100 : 0;
+}
+
+double VoiceActivityTimelineEntry::getSilencePercentage() const {
+	return totalDuration > 0 ? (silenceTime / totalDuration) * 100 : 0;
+}
+
+const std::vector<std::pair<double, double>>& VoiceActivityTimelineEntry::getSpeechSegments() const {
+	return speechSegments;
+}

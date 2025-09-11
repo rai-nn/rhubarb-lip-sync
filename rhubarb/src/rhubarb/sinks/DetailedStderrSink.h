@@ -92,6 +92,10 @@ private:
 	// Voice activity detection specifics
 	int speechSegmentCount = 0;
 	int silenceSegmentCount = 0;
+	double voiceTimelineTotalDuration = 0.0;
+	double voiceTimelineSpeechTime = 0.0;
+	double voiceTimelineSilenceTime = 0.0;
+	std::vector<std::pair<double, double>> voiceTimelineSegments;
 	
 	// Animation phase specifics
 	int totalVisemes = 0;
@@ -115,4 +119,7 @@ private:
 	
 	// Whether we've already printed the summary
 	bool summaryPrinted = false;
+	
+	// Sub-phase timings
+	std::map<std::string, double> subPhaseTimings;
 };

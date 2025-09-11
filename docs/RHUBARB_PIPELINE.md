@@ -30,22 +30,31 @@ The main entry point handles:
 - Export format selection (JSON, XML, TSV, DAT)
 - Threading configuration
 
+#### Audio Loading (`audio/audioFileReading.cpp`)
+After initialization, audio loading occurs:
+- Supports WAV and OGG Vorbis formats
+- Creates `AudioClip` object containing audio samples
+- Loads entire audio file into memory
+- Initial sample rate preserved (will be resampled as needed later)
+
 Key entry functions:
 - `main()` - Entry point at `rhubarb/src/rhubarb/main.cpp:139`
 - Creates recognizer based on type
-- Calls `animateWaveFile()` or voice activity detection
+- Calls `animateWaveFile()` which loads audio via `createAudioFileClip()`
 
-### 2. Audio Processing
-
-#### Audio Loading (`audio/audioFileReading.cpp`)
-- Supports WAV and OGG Vorbis formats
-- Creates `AudioClip` object containing audio samples
-- Handles resampling to required sample rates (8kHz for VAD, 16kHz for recognition)
+### 2. Audio Processing (Voice Activity Detection)
 
 #### Voice Activity Detection (`audio/voiceActivityDetection.cpp`)
+Detects speech segments in the loaded audio:
+
+**Sub-phases:**
+1. **Audio Preparation**: Resample to 8kHz, remove DC offset
+2. **WebRTC VAD Processing**: Frame-by-frame activity detection
+3. **Activity Refinement**: Fill gaps, remove short segments
+4. **Timeline Generation**: Create voice activity boundaries
+
 - Uses WebRTC VAD library
 - Configurable aggressiveness (0-3)
-- Fills small gaps and removes short segments
 - Configuration via `PauseDetectionConfig`:
   - `vadMaxGap`: Maximum gap to fill (default: 60ms)
   - `vadMinSegmentLength`: Minimum segment to keep (default: 30ms)

@@ -136,8 +136,20 @@ void DetailedStderrSink::receive(const logging::Entry& entry) {
 		speechSegmentCount = voiceActivityEntry->getSpeechSegments();
 		silenceSegmentCount = voiceActivityEntry->getSilenceSegments();
 	}
+	else if (const auto* voiceTimelineEntry = dynamic_cast<const VoiceActivityTimelineEntry*>(&entry)) {
+		// Track voice activity timeline output
+		voiceTimelineTotalDuration = voiceTimelineEntry->getTotalDuration();
+		voiceTimelineSpeechTime = voiceTimelineEntry->getSpeechTime();
+		voiceTimelineSilenceTime = voiceTimelineEntry->getSilenceTime();
+		voiceTimelineSegments = voiceTimelineEntry->getSpeechSegments();
+	}
 	else if (const auto* progressEntry = dynamic_cast<const ProgressEntry*>(&entry)) {
 		// We'll track progress but not display it during execution
+	}
+	else if (const auto* subPhaseEntry = dynamic_cast<const SubPhaseTimingEntry*>(&entry)) {
+		// Store sub-phase timing
+		string key = subPhaseEntry->getSubPhaseName();
+		subPhaseTimings[key] = subPhaseEntry->getDuration();
 	}
 	else if (dynamic_cast<const SuccessEntry*>(&entry)) {
 		// Pipeline complete - print the summary
@@ -266,14 +278,14 @@ void DetailedStderrSink::printSummary() {
 	// Phase summaries
 	// Always show Phase 1 even if duration is not tracked properly
 	if (phaseDurations.count(PipelinePhase::AudioLoading) || audioDuration > 0) {
-		std::cerr << "PHASE 1: Entry Point and Initialization\n";
+		std::cerr << "PHASE 1: Entry Point, Initialization and Audio Loading\n";
 		if (phaseDurations.count(PipelinePhase::AudioLoading)) {
 			std::cerr << "└─ Duration: " << formatDuration(phaseDurations[PipelinePhase::AudioLoading]) << "\n";
 		} else {
 			std::cerr << "└─ Duration: <1ms\n";
 		}
 		if (audioDuration > 0) {
-			std::cerr << "└─ Audio loaded: " << formatDuration(audioDuration);
+			std::cerr << "└─ Audio file loaded: " << formatDuration(audioDuration);
 			if (sampleRate > 0) {
 				std::cerr << ", " << sampleRate << "Hz";
 			}
@@ -288,6 +300,60 @@ void DetailedStderrSink::printSummary() {
 		if (speechSegmentCount > 0 || silenceSegmentCount > 0) {
 			std::cerr << "└─ Speech segments: " << speechSegmentCount << "\n";
 			std::cerr << "└─ Silence segments: " << silenceSegmentCount << "\n";
+		}
+		
+		// Sub-phases breakdown
+		std::cerr << "\nSub-phases:\n";
+		
+		// 2.1: Audio Preparation
+		std::cerr << "└─ 2.1: Audio Preparation (resampling to 8kHz, DC offset removal)";
+		if (subPhaseTimings.count("2.1: Audio Preparation")) {
+			std::cerr << " - " << formatDuration(subPhaseTimings["2.1: Audio Preparation"]);
+		}
+		std::cerr << "\n";
+		
+		// 2.2: WebRTC VAD Processing
+		std::cerr << "└─ 2.2: WebRTC VAD Processing (frame-by-frame activity detection)";
+		if (subPhaseTimings.count("2.2: WebRTC VAD Processing")) {
+			std::cerr << " - " << formatDuration(subPhaseTimings["2.2: WebRTC VAD Processing"]);
+		}
+		std::cerr << "\n";
+		
+		// 2.3: Activity Refinement
+		std::cerr << "└─ 2.3: Activity Refinement (gap filling, segment filtering)";
+		if (subPhaseTimings.count("2.3: Activity Refinement")) {
+			std::cerr << " - " << formatDuration(subPhaseTimings["2.3: Activity Refinement"]);
+		}
+		std::cerr << "\n";
+		
+		// 2.4: Timeline Generation
+		std::cerr << "└─ 2.4: Timeline Generation (voice activity boundaries)";
+		if (subPhaseTimings.count("2.4: Timeline Generation")) {
+			std::cerr << " - " << formatDuration(subPhaseTimings["2.4: Timeline Generation"]);
+		}
+		std::cerr << "\n";
+		
+		// Output: Voice Activity Timeline
+		if (voiceTimelineTotalDuration > 0) {
+			std::cerr << "\nOutput: Voice Activity Timeline\n";
+			std::cerr << "└─ Total duration: " << fmt::format("{:.2f}s", voiceTimelineTotalDuration) << "\n";
+			std::cerr << "└─ Speech time: " << fmt::format("{:.2f}s ({:.1f}%)", 
+				voiceTimelineSpeechTime, 
+				(voiceTimelineSpeechTime / voiceTimelineTotalDuration) * 100) << "\n";
+			std::cerr << "└─ Silence time: " << fmt::format("{:.2f}s ({:.1f}%)", 
+				voiceTimelineSilenceTime, 
+				(voiceTimelineSilenceTime / voiceTimelineTotalDuration) * 100) << "\n";
+			
+			if (!voiceTimelineSegments.empty()) {
+				std::cerr << "└─ Speech segments:\n";
+				for (size_t i = 0; i < voiceTimelineSegments.size(); ++i) {
+					double duration = voiceTimelineSegments[i].second - voiceTimelineSegments[i].first;
+					std::cerr << "   └─ " << fmt::format("[{:.2f}s - {:.2f}s] duration: {:.2f}s", 
+						voiceTimelineSegments[i].first, 
+						voiceTimelineSegments[i].second,
+						duration) << "\n";
+				}
+			}
 		}
 		std::cerr << "\n";
 	}
@@ -460,9 +526,19 @@ string DetailedStderrSink::phaseToString(PipelinePhase phase) const {
 }
 
 string DetailedStderrSink::formatDuration(double seconds) const {
-	if (seconds < 1.0) {
-		return fmt::format("{:.0f}ms", seconds * 1000);
+	double milliseconds = seconds * 1000;
+	
+	if (milliseconds < 1.0) {
+		// Sub-millisecond: show with 2 decimal places
+		return fmt::format("{:.2f}ms", milliseconds);
+	} else if (milliseconds < 10.0) {
+		// 1-10ms: show with 1 decimal place
+		return fmt::format("{:.1f}ms", milliseconds);
+	} else if (seconds < 1.0) {
+		// 10-999ms: show with no decimal places
+		return fmt::format("{:.0f}ms", milliseconds);
 	} else {
+		// 1s and above: show in seconds with 2 decimal places
 		return fmt::format("{:.2f}s", seconds);
 	}
 }

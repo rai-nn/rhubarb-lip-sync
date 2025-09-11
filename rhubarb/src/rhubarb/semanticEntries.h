@@ -139,3 +139,36 @@ private:
 	std::string text;
 	double processingDuration;
 };
+
+class SubPhaseTimingEntry : public SemanticEntry {
+public:
+	SubPhaseTimingEntry(const std::string& phaseName, const std::string& subPhaseName, double duration);
+	std::string getPhaseName() const;
+	std::string getSubPhaseName() const;
+	double getDuration() const;
+private:
+	std::string phaseName;
+	std::string subPhaseName;
+	double duration;
+};
+
+class VoiceActivityTimelineEntry : public SemanticEntry {
+public:
+	VoiceActivityTimelineEntry(
+		double totalDuration, 
+		double speechTime, 
+		double silenceTime,
+		const std::vector<std::pair<double, double>>& speechSegments
+	);
+	double getTotalDuration() const;
+	double getSpeechTime() const;
+	double getSilenceTime() const;
+	double getSpeechPercentage() const;
+	double getSilencePercentage() const;
+	const std::vector<std::pair<double, double>>& getSpeechSegments() const;
+private:
+	double totalDuration;
+	double speechTime;
+	double silenceTime;
+	std::vector<std::pair<double, double>> speechSegments;
+};
