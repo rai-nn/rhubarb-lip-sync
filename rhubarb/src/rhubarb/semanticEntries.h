@@ -172,3 +172,31 @@ private:
 	double silenceTime;
 	std::vector<std::pair<double, double>> speechSegments;
 };
+
+struct UtteranceOutputInfo {
+	int index;
+	double startTime;
+	double endTime;
+	std::string text;
+	std::vector<std::string> words;
+	std::vector<std::string> phonemes;
+};
+
+class SpeechRecognitionOutputEntry : public SemanticEntry {
+public:
+	SpeechRecognitionOutputEntry(
+		int totalUtterances,
+		int totalWords,
+		int totalPhonemes,
+		const std::vector<UtteranceOutputInfo>& utteranceResults
+	);
+	int getTotalUtterances() const;
+	int getTotalWords() const;
+	int getTotalPhonemes() const;
+	const std::vector<UtteranceOutputInfo>& getUtteranceResults() const;
+private:
+	int totalUtterances;
+	int totalWords;
+	int totalPhonemes;
+	std::vector<UtteranceOutputInfo> utteranceResults;
+};

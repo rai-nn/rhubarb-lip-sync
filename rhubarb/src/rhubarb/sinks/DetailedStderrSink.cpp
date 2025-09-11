@@ -143,6 +143,13 @@ void DetailedStderrSink::receive(const logging::Entry& entry) {
 		voiceTimelineSilenceTime = voiceTimelineEntry->getSilenceTime();
 		voiceTimelineSegments = voiceTimelineEntry->getSpeechSegments();
 	}
+	else if (const auto* speechOutputEntry = dynamic_cast<const SpeechRecognitionOutputEntry*>(&entry)) {
+		// Track speech recognition output
+		totalUtterances = speechOutputEntry->getTotalUtterances();
+		totalWords = speechOutputEntry->getTotalWords();
+		totalPhonemes = speechOutputEntry->getTotalPhonemes();
+		utteranceResults = speechOutputEntry->getUtteranceResults();
+	}
 	else if (const auto* progressEntry = dynamic_cast<const ProgressEntry*>(&entry)) {
 		// We'll track progress but not display it during execution
 	}
@@ -381,6 +388,46 @@ void DetailedStderrSink::printSummary() {
 		std::cerr << "└─ 3.2: Parallel Utterance Processing (see timeline below)\n";
 		std::cerr << "└─ 3.3: Utterance-Level Processing (see timeline below)\n";
 		std::cerr << "└─ 3.4: Timeline Assembly (automatic during processing)\n";
+		
+		// Output: Speech Recognition Results
+		if (!utteranceResults.empty()) {
+			std::cerr << "\nOutput: Speech Recognition Results\n";
+			std::cerr << "└─ Utterances processed: " << utteranceResults.size() << "\n";
+			std::cerr << "└─ Total words: " << totalWords << "\n";
+			std::cerr << "└─ Total phonemes: " << totalPhonemes << "\n";
+			
+			std::cerr << "\nUtterance Details:\n";
+			for (const auto& result : utteranceResults) {
+				double duration = result.endTime - result.startTime;
+				std::cerr << "└─ Utterance " << result.index 
+					<< " [" << fmt::format("{:.2f}s - {:.2f}s", result.startTime, result.endTime) 
+					<< "] duration: " << fmt::format("{:.2f}s", duration) << "\n";
+				
+				// Display text
+				std::cerr << "   └─ Text: ";
+				if (result.text.empty() || result.text == "[NOISE]" || result.text == "[BREATH]") {
+					std::cerr << (result.text.empty() ? "[NOISE]" : result.text);
+				} else {
+					std::cerr << "\"" << result.text << "\"";
+				}
+				std::cerr << "\n";
+				
+				// Display words count
+				std::cerr << "   └─ Words: " << result.words.size() << "\n";
+				
+				// Display phonemes
+				std::cerr << "   └─ Phonemes: " << result.phonemes.size();
+				if (!result.phonemes.empty()) {
+					std::cerr << "\n   └─ [";
+					for (size_t i = 0; i < result.phonemes.size(); ++i) {
+						if (i > 0) std::cerr << " ";
+						std::cerr << result.phonemes[i];
+					}
+					std::cerr << "]";
+				}
+				std::cerr << "\n\n";
+			}
+		}
 		
 		// Thread execution timeline (if enabled and multi-threaded)
 		if (includeThreadTimeline && maxThreadsUsed > 1) {

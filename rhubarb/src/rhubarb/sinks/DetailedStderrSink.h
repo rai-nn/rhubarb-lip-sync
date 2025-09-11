@@ -10,6 +10,9 @@
 #include <variant>
 #include <thread>
 
+// Forward declaration
+struct UtteranceOutputInfo;
+
 // Pipeline phases for tracking
 enum class PipelinePhase {
 	Initialization,
@@ -88,6 +91,7 @@ private:
 	int totalWords = 0;
 	int totalPhonemes = 0;
 	std::vector<std::pair<double, double>> speechSegments;
+	std::vector<UtteranceOutputInfo> utteranceResults;
 	
 	// Voice activity detection specifics
 	int speechSegmentCount = 0;

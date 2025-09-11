@@ -261,3 +261,33 @@ double VoiceActivityTimelineEntry::getSilencePercentage() const {
 const std::vector<std::pair<double, double>>& VoiceActivityTimelineEntry::getSpeechSegments() const {
 	return speechSegments;
 }
+
+SpeechRecognitionOutputEntry::SpeechRecognitionOutputEntry(
+	int totalUtterances,
+	int totalWords,
+	int totalPhonemes,
+	const std::vector<UtteranceOutputInfo>& utteranceResults
+) :
+	SemanticEntry(Level::Debug, fmt::format("Speech recognition output: {} utterances, {} words, {} phonemes", 
+		totalUtterances, totalWords, totalPhonemes)),
+	totalUtterances(totalUtterances),
+	totalWords(totalWords),
+	totalPhonemes(totalPhonemes),
+	utteranceResults(utteranceResults)
+{}
+
+int SpeechRecognitionOutputEntry::getTotalUtterances() const {
+	return totalUtterances;
+}
+
+int SpeechRecognitionOutputEntry::getTotalWords() const {
+	return totalWords;
+}
+
+int SpeechRecognitionOutputEntry::getTotalPhonemes() const {
+	return totalPhonemes;
+}
+
+const std::vector<UtteranceOutputInfo>& SpeechRecognitionOutputEntry::getUtteranceResults() const {
+	return utteranceResults;
+}

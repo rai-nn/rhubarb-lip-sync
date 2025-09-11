@@ -144,6 +144,10 @@ BoundedTimeline<Phone> recognizePhones(
 	std::atomic<int> utteranceCounter(0);
 	const int totalUtterances = utterances.size();
 	
+	// Collect utterance results for output logging
+	std::vector<UtteranceOutputInfo> collectedUtteranceResults;
+	collectedUtteranceResults.reserve(totalUtterances);
+	
 	const auto processUtterance = [&](Timed<void> timedUtterance, ProgressSink& utteranceProgressSink) {
 		// Get utterance index and track processing start time
 		int utteranceIndex = utteranceCounter.fetch_add(1) + 1;
@@ -195,10 +199,41 @@ BoundedTimeline<Phone> recognizePhones(
 			processingDuration
 		));
 
-		// Copy phones to result timeline
+		// Copy phones to result timeline and collect data for output logging
 		std::lock_guard<std::mutex> lock(resultMutex);
 		for (const auto& timedPhone : utteranceResult.phones) {
 			phones.set(timedPhone);
+		}
+		
+		// Store utterance result for final output logging
+		// Note: We're storing with utteranceIndex-1 because we incremented it earlier
+		if (collectedUtteranceResults.size() < static_cast<size_t>(utteranceIndex)) {
+			collectedUtteranceResults.resize(utteranceIndex);
+		}
+		
+		// Create an UtteranceOutputInfo structure for the semantic entry
+		UtteranceOutputInfo& storedResult = collectedUtteranceResults[utteranceIndex - 1];
+		storedResult.index = utteranceIndex;
+		storedResult.startTime = timedUtterance.getTimeRange().getStart().count() / 100.0;
+		storedResult.endTime = timedUtterance.getTimeRange().getEnd().count() / 100.0;
+		storedResult.text = utteranceResult.text;
+		
+		// Extract words from the text (simple space-based tokenization)
+		if (!utteranceResult.text.empty() && utteranceResult.text != "[BREATH]" && utteranceResult.text != "[NOISE]") {
+			std::istringstream iss(utteranceResult.text);
+			std::string word;
+			while (iss >> word) {
+				// Remove [BREATH] markers from word counting
+				if (word != "[BREATH]" && word != "[NOISE]") {
+					storedResult.words.push_back(word);
+				}
+			}
+		}
+		
+		// Extract phonemes
+		for (const auto& timedPhone : utteranceResult.phones) {
+			string phoneName = PhoneConverter::get().toString(timedPhone.getValue());
+			storedResult.phonemes.push_back(phoneName);
 		}
 	};
 
@@ -246,6 +281,22 @@ BoundedTimeline<Phone> recognizePhones(
 		logging::debugFormat("Processing complete. Final decoder pool size: {}", decoderPool.size());
 		
 		logging::debug("Speech recognition -- end");
+		
+		// Calculate totals for speech recognition output
+		int totalWords = 0;
+		int totalPhonemesCount = 0;
+		for (const auto& result : collectedUtteranceResults) {
+			totalWords += result.words.size();
+			totalPhonemesCount += result.phonemes.size();
+		}
+		
+		// Log the speech recognition output
+		logging::log(SpeechRecognitionOutputEntry(
+			collectedUtteranceResults.size(),
+			totalWords,
+			totalPhonemesCount,
+			collectedUtteranceResults
+		));
 		
 		// End speech recognition phase
 		auto recognitionEnd = std::chrono::steady_clock::now();
