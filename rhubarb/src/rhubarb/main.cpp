@@ -328,6 +328,11 @@ int main(int platformArgc, char* platformArgv[]) {
 		} else if (machineReadableMode.getValue()) {
 			logging::addSink(make_shared<MachineReadableStderrSink>(consoleLevel.getValue()));
 		} else if (detailedMode.getValue()) {
+			// In detailed mode, add BOTH sinks:
+			// 1. NiceStderrSink for real-time console output (respecting consoleLevel)
+			logging::addSink(make_shared<NiceStderrSink>(consoleLevel.getValue()));
+			
+			// 2. DetailedStderrSink for collecting metrics and showing summary at the end
 			// Always include threads in detailed mode
 			// Use Debug level for DetailedStderrSink to capture all metrics
 			// Pass thread configuration information

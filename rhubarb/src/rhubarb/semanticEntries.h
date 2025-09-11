@@ -58,6 +58,16 @@ private:
 	double duration;
 };
 
+class DecoderCreationEntry : public SemanticEntry {
+public:
+	DecoderCreationEntry(int decoderNumber, double creationTime);
+	int getDecoderNumber() const;
+	double getCreationTime() const;
+private:
+	int decoderNumber;
+	double creationTime;
+};
+
 class UtteranceEntry : public SemanticEntry {
 public:
 	UtteranceEntry(int index, int total, double startTime, double endTime, const std::string& text);

@@ -87,6 +87,18 @@ void DetailedStderrSink::receive(const logging::Entry& entry) {
 		
 		addEvent(event);
 	}
+	else if (const auto* decoderCreationEntry = dynamic_cast<const DecoderCreationEntry*>(&entry)) {
+		// Track decoder creation
+		PipelineEvent event;
+		event.timestamp = steady_clock::now();
+		event.threadId = std::this_thread::get_id();
+		event.phase = PipelinePhase::SpeechRecognition;
+		event.description = fmt::format("Decoder #{} created ({:.2f}s)", 
+			decoderCreationEntry->getDecoderNumber(), 
+			decoderCreationEntry->getCreationTime());
+		
+		addEvent(event);
+	}
 	else if (const auto* utteranceEndEntry = dynamic_cast<const UtteranceEndEntry*>(&entry)) {
 		// Track utterance processing end
 		PipelineEvent event;
@@ -287,56 +299,78 @@ void DetailedStderrSink::printSummary() {
 		if (includeThreadTimeline && maxThreadsUsed > 1) {
 			std::cerr << "\nThread execution timeline:\n";
 			
-			// Collect indices of utterance end events (which have processing duration)
-			std::vector<size_t> utteranceEventIndices;
+			// Collect indices of relevant events
+			std::vector<size_t> timelineEventIndices;
 			for (size_t i = 0; i < events.size(); ++i) {
 				const auto& event = events[i];
+				// Include utterance events
 				if (event.isUtterance && event.phase == PipelinePhase::SpeechRecognition) {
 					// Prefer new format (end events with processing duration)
 					if (event.isUtteranceEnd) {
-						utteranceEventIndices.push_back(i);
+						timelineEventIndices.push_back(i);
 					}
 					// Fallback to old format for backward compatibility
 					else if (!event.isUtteranceStart && !event.isUtteranceEnd) {
-						utteranceEventIndices.push_back(i);
+						timelineEventIndices.push_back(i);
 					}
+				}
+				// Include decoder creation events
+				else if (event.phase == PipelinePhase::SpeechRecognition && 
+				         event.description.find("Decoder #") != std::string::npos) {
+					timelineEventIndices.push_back(i);
 				}
 			}
 			
-			// Sort by utterance start timestamp (chronological order)
-			std::sort(utteranceEventIndices.begin(), utteranceEventIndices.end(), 
+			// Sort by event timestamp
+			std::sort(timelineEventIndices.begin(), timelineEventIndices.end(), 
 				[this](size_t a, size_t b) {
-					return events[a].utteranceStart < events[b].utteranceStart;
+					// For utterances, sort by start time; for others, by timestamp
+					if (events[a].isUtterance && events[b].isUtterance) {
+						return events[a].utteranceStart < events[b].utteranceStart;
+					}
+					return events[a].timestamp < events[b].timestamp;
 				});
 			
 			// Display sorted events with thread information
-			for (size_t idx : utteranceEventIndices) {
+			for (size_t idx : timelineEventIndices) {
 				const auto& event = events[idx];
 				int threadNum = threadIdToNumber[event.threadId];
 				
-				if (event.processingDuration > 0.0) {
-					// Show processing duration for new format
-					std::cerr << fmt::format("[T{}] {:.2f}s: Utterance {} ({:.2f}-{:.2f}s)",
-						threadNum,
-						event.processingDuration,
-						event.utteranceIndex,
-						event.utteranceStart,
-						event.utteranceEnd);
-				} else {
-					// Fallback to old format (completion timestamp)
+				// Handle decoder creation events
+				if (event.description.find("Decoder #") != std::string::npos) {
 					double relativeTime = duration_cast<milliseconds>(event.timestamp - startTime).count() / 1000.0;
-					std::cerr << fmt::format("[T{}] {:.2f}s: Utterance {} ({:.2f}-{:.2f}s)",
+					std::cerr << fmt::format("[T{}] {:.2f}s: {}",
 						threadNum,
 						relativeTime,
-						event.utteranceIndex,
-						event.utteranceStart,
-						event.utteranceEnd);
+						event.description);
+					std::cerr << "\n";
 				}
-				
-				if (!event.utteranceText.empty() && event.utteranceText != " ") {
-					std::cerr << " \"" << event.utteranceText << "\"";
+				// Handle utterance events
+				else if (event.isUtterance) {
+					if (event.processingDuration > 0.0) {
+						// Show processing duration for new format
+						std::cerr << fmt::format("[T{}] {:.2f}s: Utterance {} ({:.2f}-{:.2f}s)",
+							threadNum,
+							event.processingDuration,
+							event.utteranceIndex,
+							event.utteranceStart,
+							event.utteranceEnd);
+					} else {
+						// Fallback to old format (completion timestamp)
+						double relativeTime = duration_cast<milliseconds>(event.timestamp - startTime).count() / 1000.0;
+						std::cerr << fmt::format("[T{}] {:.2f}s: Utterance {} ({:.2f}-{:.2f}s)",
+							threadNum,
+							relativeTime,
+							event.utteranceIndex,
+							event.utteranceStart,
+							event.utteranceEnd);
+					}
+					
+					if (!event.utteranceText.empty() && event.utteranceText != " ") {
+						std::cerr << " \"" << event.utteranceText << "\"";
+					}
+					std::cerr << "\n";
 				}
-				std::cerr << "\n";
 			}
 		}
 		std::cerr << "\n";

@@ -66,6 +66,20 @@ double PhaseEndEntry::getDuration() const {
 	return duration;
 }
 
+DecoderCreationEntry::DecoderCreationEntry(int decoderNumber, double creationTime) :
+	SemanticEntry(Level::Info, fmt::format("Decoder #{} created in {:.2f}s", decoderNumber, creationTime)),
+	decoderNumber(decoderNumber),
+	creationTime(creationTime)
+{}
+
+int DecoderCreationEntry::getDecoderNumber() const {
+	return decoderNumber;
+}
+
+double DecoderCreationEntry::getCreationTime() const {
+	return creationTime;
+}
+
 UtteranceEntry::UtteranceEntry(int index, int total, double startTime, double endTime, const string& text) :
 	SemanticEntry(Level::Debug, fmt::format("Utterance {}/{} ({:.2f}-{:.2f}s): {}", index, total, startTime, endTime, text)),
 	index(index),

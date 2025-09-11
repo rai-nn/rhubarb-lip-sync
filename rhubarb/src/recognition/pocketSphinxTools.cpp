@@ -10,6 +10,8 @@
 #include "../rhubarb/semanticEntries.h"
 #include <chrono>
 #include <atomic>
+#include <sstream>
+#include <thread>
 
 extern "C" {
 #include <sphinxbase/err.h>
@@ -116,9 +118,26 @@ BoundedTimeline<Phone> recognizePhones(
 	auto recognitionStart = std::chrono::steady_clock::now();
 	logging::log(PhaseStartEntry("SpeechRecognition", utterances.size()));
 	
-	// Prepare pool of decoders
+	// Prepare pool of decoders with timing wrapper
+	std::atomic<int> decoderCount(0);
 	ObjectPool<ps_decoder_t, lambda_unique_ptr<ps_decoder_t>> decoderPool(
-		[&] { return createDecoder(dialog); });
+		[&] { 
+			auto start = std::chrono::steady_clock::now();
+			int currentCount = decoderCount.load();
+			logging::debugFormat("Creating decoder #{} (pool was empty)...", currentCount + 1);
+			
+			auto decoder = createDecoder(dialog);
+			
+			auto end = std::chrono::steady_clock::now();
+			double duration = std::chrono::duration<double>(end - start).count();
+			decoderCount++;
+			logging::debugFormat("Decoder #{} created in {:.2f}s", currentCount + 1, duration);
+			
+			// Log using semantic entry for detailed mode
+			logging::log(DecoderCreationEntry(currentCount + 1, duration));
+			
+			return decoder;
+		});
 
 	BoundedTimeline<Phone> phones(audioClip->getTruncatedRange());
 	std::mutex resultMutex;
@@ -139,8 +158,22 @@ BoundedTimeline<Phone> recognizePhones(
 			"" // Text not available at start
 		));
 		
+		// Log which thread is about to acquire decoder
+		std::stringstream ss;
+		ss << std::this_thread::get_id();
+		logging::debugFormat("Thread {} requesting decoder for utterance {} ({:.2f}-{:.2f}s)...", 
+		                    ss.str(), utteranceIndex,
+		                    timedUtterance.getTimeRange().getStart().count() / 100.0,
+		                    timedUtterance.getTimeRange().getEnd().count() / 100.0);
+		
 		// Detect phones for utterance
+		auto beforeAcquire = std::chrono::steady_clock::now();
 		const auto decoder = decoderPool.acquire();
+		
+		auto decoderAcquired = std::chrono::steady_clock::now();
+		double acquireTime = std::chrono::duration<double>(decoderAcquired - beforeAcquire).count();
+		logging::debugFormat("Thread {} acquired decoder in {:.2f}s, starting utterance {} processing", 
+		                    ss.str(), acquireTime, utteranceIndex);
 		UtteranceResult utteranceResult = utteranceToPhones(
 			*audioClip,
 			timedUtterance.getTimeRange(),
@@ -194,6 +227,12 @@ BoundedTimeline<Phone> recognizePhones(
 		logging::debugFormat("Thread allocation constraints: maxThreads={}, utteranceCount={}, audioDuration={}s, finalThreadCount={}", 
 			maxThreads, utteranceCount, audioDurationSeconds, threadCount);
 		logging::debugFormat("Speech recognition using {} threads -- start", threadCount);
+		
+		// Log pool state before processing
+		logging::debugFormat("Starting parallel processing with {} threads for {} utterances", 
+		                    threadCount, utterances.size());
+		logging::debugFormat("Decoder pool initially empty: {}", decoderPool.empty());
+		
 		runParallel(
 			"speech recognition (PocketSphinx tools)",
 			processUtterance,
@@ -202,6 +241,10 @@ BoundedTimeline<Phone> recognizePhones(
 			dialogProgressSink,
 			getUtteranceProgressWeight
 		);
+		
+		// Log pool state after processing
+		logging::debugFormat("Processing complete. Final decoder pool size: {}", decoderPool.size());
+		
 		logging::debug("Speech recognition -- end");
 		
 		// End speech recognition phase
