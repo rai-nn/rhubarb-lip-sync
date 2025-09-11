@@ -200,3 +200,22 @@ private:
 	int totalPhonemes;
 	std::vector<UtteranceOutputInfo> utteranceResults;
 };
+
+class UtteranceSubStepEntry : public SemanticEntry {
+public:
+	UtteranceSubStepEntry(
+		int utteranceIndex,
+		const std::string& subStepName,
+		double duration,
+		const std::string& details = ""
+	);
+	int getUtteranceIndex() const;
+	std::string getSubStepName() const;
+	double getDuration() const;
+	std::string getDetails() const;
+private:
+	int utteranceIndex;
+	std::string subStepName;
+	double duration;
+	std::string details;
+};

@@ -176,34 +176,38 @@ BoundedTimeline<Phone> recognizePhones(
 		
 		auto decoderAcquired = std::chrono::steady_clock::now();
 		double acquireTime = std::chrono::duration<double>(decoderAcquired - beforeAcquire).count();
-		logging::debugFormat("Thread {} acquired decoder in {:.2f}s, starting utterance {} processing", 
+		logging::debugFormat("Thread {} acquired decoder in {:.2f}s (total acquire time including any waiting), starting utterance {} processing", 
 		                    ss.str(), acquireTime, utteranceIndex);
+		
+		// Log decoder acquisition as a sub-step
+		// Heuristic: if acquisition took > 0.1s, a new decoder was likely created
+		std::string acquireDetails = (acquireTime > 0.1) ? "new decoder created" : "from pool";
+		logging::log(UtteranceSubStepEntry(utteranceIndex, "Decoder Acquisition", acquireTime, acquireDetails));
+		
 		UtteranceResult utteranceResult = utteranceToPhones(
 			*audioClip,
 			timedUtterance.getTimeRange(),
 			*decoder,
-			utteranceProgressSink
+			utteranceProgressSink,
+			utteranceIndex
 		);
-
-		// Calculate processing duration
-		auto processingEnd = std::chrono::steady_clock::now();
-		double processingDuration = std::chrono::duration<double>(processingEnd - processingStart).count();
 		
-		// Log utterance end with the actual recognized text
-		logging::log(UtteranceEndEntry(
-			utteranceIndex, 
-			totalUtterances,
-			timedUtterance.getTimeRange().getStart().count() / 100.0, // Convert centiseconds to seconds
-			timedUtterance.getTimeRange().getEnd().count() / 100.0, // Convert centiseconds to seconds
-			utteranceResult.text, // Now we have the actual text
-			processingDuration
-		));
+		// Measure post-processing time (result collection)
+		auto postProcessingStart = std::chrono::steady_clock::now();
 
 		// Copy phones to result timeline and collect data for output logging
+		auto mutexAcquireStart = std::chrono::steady_clock::now();
 		std::lock_guard<std::mutex> lock(resultMutex);
+		auto mutexAcquireEnd = std::chrono::steady_clock::now();
+		double mutexWaitTime = std::chrono::duration<double>(mutexAcquireEnd - mutexAcquireStart).count();
+		
+		// Measure timeline update time
+		auto timelineUpdateStart = std::chrono::steady_clock::now();
 		for (const auto& timedPhone : utteranceResult.phones) {
 			phones.set(timedPhone);
 		}
+		auto timelineUpdateEnd = std::chrono::steady_clock::now();
+		double timelineUpdateTime = std::chrono::duration<double>(timelineUpdateEnd - timelineUpdateStart).count();
 		
 		// Store utterance result for final output logging
 		// Note: We're storing with utteranceIndex-1 because we incremented it earlier
@@ -235,6 +239,30 @@ BoundedTimeline<Phone> recognizePhones(
 			string phoneName = PhoneConverter::get().toString(timedPhone.getValue());
 			storedResult.phonemes.push_back(phoneName);
 		}
+		
+		// Calculate total post-processing time
+		auto postProcessingEnd = std::chrono::steady_clock::now();
+		double postProcessingDuration = std::chrono::duration<double>(postProcessingEnd - postProcessingStart).count();
+		
+		// Log post-processing as a sub-step with details
+		std::string postDetails = fmt::format("mutex wait: {:.3f}s, timeline: {:.3f}s", 
+			mutexWaitTime, timelineUpdateTime);
+		logging::log(UtteranceSubStepEntry(utteranceIndex, "Result Collection", postProcessingDuration, postDetails));
+		
+		// Calculate overall processing duration
+		auto processingEnd = std::chrono::steady_clock::now();
+		double processingDuration = std::chrono::duration<double>(processingEnd - processingStart).count();
+		
+		// Log utterance end with the actual recognized text
+		logging::log(UtteranceEndEntry(
+			utteranceIndex, 
+			totalUtterances,
+			timedUtterance.getTimeRange().getStart().count() / 100.0, // Convert centiseconds to seconds
+			timedUtterance.getTimeRange().getEnd().count() / 100.0, // Convert centiseconds to seconds
+			utteranceResult.text, // Now we have the actual text
+			processingDuration
+		));
+		
 	};
 
 	const auto getUtteranceProgressWeight = [](const Timed<void> timedUtterance) {

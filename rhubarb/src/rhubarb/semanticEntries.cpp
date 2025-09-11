@@ -291,3 +291,33 @@ int SpeechRecognitionOutputEntry::getTotalPhonemes() const {
 const std::vector<UtteranceOutputInfo>& SpeechRecognitionOutputEntry::getUtteranceResults() const {
 	return utteranceResults;
 }
+
+UtteranceSubStepEntry::UtteranceSubStepEntry(
+	int utteranceIndex,
+	const std::string& subStepName,
+	double duration,
+	const std::string& details
+) :
+	SemanticEntry(Level::Debug, fmt::format("Utterance {} sub-step '{}': {:.3f}s{}", 
+		utteranceIndex, subStepName, duration, details.empty() ? "" : fmt::format(" ({})", details))),
+	utteranceIndex(utteranceIndex),
+	subStepName(subStepName),
+	duration(duration),
+	details(details)
+{}
+
+int UtteranceSubStepEntry::getUtteranceIndex() const {
+	return utteranceIndex;
+}
+
+std::string UtteranceSubStepEntry::getSubStepName() const {
+	return subStepName;
+}
+
+double UtteranceSubStepEntry::getDuration() const {
+	return duration;
+}
+
+std::string UtteranceSubStepEntry::getDetails() const {
+	return details;
+}

@@ -4,6 +4,8 @@
 #include "audio/SampleRateConverter.h"
 #include "audio/processing.h"
 #include "time/timedLogging.h"
+#include "../rhubarb/semanticEntries.h"
+#include <chrono>
 
 using std::runtime_error;
 using std::unique_ptr;
@@ -56,8 +58,13 @@ static UtteranceResult utteranceToPhones(
 	const AudioClip& audioClip,
 	TimeRange utteranceTimeRange,
 	ps_decoder_t& decoder,
-	ProgressSink& utteranceProgressSink
+	ProgressSink& utteranceProgressSink,
+	int utteranceIndex
 ) {
+	
+	// Start timing audio preparation
+	auto audioPrepStart = std::chrono::steady_clock::now();
+	
 	// Pad time range to give PocketSphinx some breathing room
 	TimeRange paddedTimeRange = utteranceTimeRange;
 	const centiseconds padding(3);
@@ -68,8 +75,13 @@ static UtteranceResult utteranceToPhones(
 		| segment(paddedTimeRange)
 		| resample(sphinxSampleRate);
 	const auto audioBuffer = copyTo16bitBuffer(*clipSegment);
+	
+	auto audioPrepEnd = std::chrono::steady_clock::now();
+	double audioPrepDuration = std::chrono::duration<double>(audioPrepEnd - audioPrepStart).count();
+	logging::log(UtteranceSubStepEntry(utteranceIndex, "Audio Preparation", audioPrepDuration));
 
 	// Detect phones (returned as words)
+	auto phoneDetectionStart = std::chrono::steady_clock::now();
 	BoundedTimeline<string> phoneStrings = recognizeWords(audioBuffer, decoder);
 	phoneStrings.shift(paddedTimeRange.getStart());
 	Timeline<Phone> utterancePhones;
@@ -81,6 +93,9 @@ static UtteranceResult utteranceToPhones(
 		}
 		utterancePhones.set(timedPhoneString.getTimeRange(), phone);
 	}
+	auto phoneDetectionEnd = std::chrono::steady_clock::now();
+	double phoneDetectionDuration = std::chrono::duration<double>(phoneDetectionEnd - phoneDetectionStart).count();
+	logging::log(UtteranceSubStepEntry(utteranceIndex, "Phone Detection", phoneDetectionDuration));
 
 	// Log raw phones
 	for (const auto& timedPhone : utterancePhones) {
@@ -88,10 +103,14 @@ static UtteranceResult utteranceToPhones(
 	}
 
 	// Guess positions of noise sounds
+	auto noiseDetectionStart = std::chrono::steady_clock::now();
 	JoiningTimeline<void> noiseSounds = getNoiseSounds(utteranceTimeRange, utterancePhones);
 	for (const auto& noiseSound : noiseSounds) {
 		utterancePhones.set(noiseSound.getTimeRange(), Phone::Noise);
 	}
+	auto noiseDetectionEnd = std::chrono::steady_clock::now();
+	double noiseDetectionDuration = std::chrono::duration<double>(noiseDetectionEnd - noiseDetectionStart).count();
+	logging::log(UtteranceSubStepEntry(utteranceIndex, "Noise Detection", noiseDetectionDuration));
 
 	// Log phones
 	for (const auto& timedPhone : utterancePhones) {

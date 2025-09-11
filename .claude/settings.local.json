@@ -19,7 +19,8 @@
       "Bash(/Users/peterstajger/git/bob/visemes/rhubarb-lip-sync/build/rhubarb/rhubarb /Users/peterstajger/git/bob/visemes/rhubarb-lip-sync/time-improvement/example/audio.wav --detailed -o /tmp/test_detailed.json)",
       "Bash(/Users/peterstajger/git/bob/visemes/rhubarb-lip-sync/build/rhubarb/rhubarb /Users/peterstajger/git/bob/visemes/rhubarb-lip-sync/time-improvement/example/audio.wav --detailed --logLevel Debug --logFile /tmp/debug.log -o /tmp/test_detailed.json)",
       "Bash(/Users/peterstajger/git/bob/visemes/rhubarb-lip-sync/build/rhubarb/rhubarb /Users/peterstajger/git/bob/visemes/rhubarb-lip-sync/time-improvement/example/audio.wav --detailed --consoleLevel Debug -o /tmp/test_detailed.json)",
-      "Bash(ffprobe:*)"
+      "Bash(ffprobe:*)",
+      "Bash(tee:*)"
     ],
     "deny": []
   }

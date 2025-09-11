@@ -158,6 +158,14 @@ void DetailedStderrSink::receive(const logging::Entry& entry) {
 		string key = subPhaseEntry->getSubPhaseName();
 		subPhaseTimings[key] = subPhaseEntry->getDuration();
 	}
+	else if (const auto* utteranceSubStepEntry = dynamic_cast<const UtteranceSubStepEntry*>(&entry)) {
+		// Store utterance sub-step timing
+		UtteranceSubStep subStep;
+		subStep.name = utteranceSubStepEntry->getSubStepName();
+		subStep.duration = utteranceSubStepEntry->getDuration();
+		subStep.details = utteranceSubStepEntry->getDetails();
+		utteranceSubSteps[utteranceSubStepEntry->getUtteranceIndex()].push_back(subStep);
+	}
 	else if (dynamic_cast<const SuccessEntry*>(&entry)) {
 		// Pipeline complete - print the summary
 		if (!summaryPrinted) {
@@ -425,85 +433,94 @@ void DetailedStderrSink::printSummary() {
 					}
 					std::cerr << "]";
 				}
-				std::cerr << "\n\n";
+				std::cerr << "\n";
+				
+				// Display sub-step timings if available
+				auto subStepsIt = utteranceSubSteps.find(result.index);
+				if (subStepsIt != utteranceSubSteps.end() && !subStepsIt->second.empty()) {
+					std::cerr << "   └─ Processing Sub-steps:\n";
+					double totalSubStepTime = 0.0;
+					for (const auto& subStep : subStepsIt->second) {
+						std::cerr << fmt::format("      └─ {}: {:.3f}s", subStep.name, subStep.duration);
+						if (!subStep.details.empty()) {
+							std::cerr << " (" << subStep.details << ")";
+						}
+						std::cerr << "\n";
+						totalSubStepTime += subStep.duration;
+					}
+					std::cerr << fmt::format("      └─ Total sub-step time: {:.3f}s\n", totalSubStepTime);
+				}
+				
+				std::cerr << "\n";
 			}
 		}
 		
 		// Thread execution timeline (if enabled and multi-threaded)
 		if (includeThreadTimeline && maxThreadsUsed > 1) {
-			std::cerr << "\nThread execution timeline:\n";
+			std::cerr << "\nThread Execution Timeline:\n";
+			std::cerr << "┌────────┬──────────────┬───────────┬────────────────────┬──────────────────────────────────────────┐\n";
+			std::cerr << "│ Thread │ Process Time │ Utterance │ Audio Range        │ Text                                     │\n";
+			std::cerr << "├────────┼──────────────┼───────────┼────────────────────┼──────────────────────────────────────────┤\n";
 			
-			// Collect indices of relevant events
-			std::vector<size_t> timelineEventIndices;
+			// Collect utterance and decoder events
+			std::vector<size_t> utteranceIndices;
+			std::vector<size_t> decoderIndices;
+			
 			for (size_t i = 0; i < events.size(); ++i) {
 				const auto& event = events[i];
-				// Include utterance events
 				if (event.isUtterance && event.phase == PipelinePhase::SpeechRecognition) {
-					// Prefer new format (end events with processing duration)
 					if (event.isUtteranceEnd) {
-						timelineEventIndices.push_back(i);
-					}
-					// Fallback to old format for backward compatibility
-					else if (!event.isUtteranceStart && !event.isUtteranceEnd) {
-						timelineEventIndices.push_back(i);
+						utteranceIndices.push_back(i);
 					}
 				}
-				// Include decoder creation events
 				else if (event.phase == PipelinePhase::SpeechRecognition && 
 				         event.description.find("Decoder #") != std::string::npos) {
-					timelineEventIndices.push_back(i);
+					decoderIndices.push_back(i);
 				}
 			}
 			
-			// Sort by event timestamp
-			std::sort(timelineEventIndices.begin(), timelineEventIndices.end(), 
+			// Sort utterances by timestamp
+			std::sort(utteranceIndices.begin(), utteranceIndices.end(), 
 				[this](size_t a, size_t b) {
-					// For utterances, sort by start time; for others, by timestamp
-					if (events[a].isUtterance && events[b].isUtterance) {
-						return events[a].utteranceStart < events[b].utteranceStart;
-					}
 					return events[a].timestamp < events[b].timestamp;
 				});
 			
-			// Display sorted events with thread information
-			for (size_t idx : timelineEventIndices) {
+			// Display utterance table
+			for (size_t idx : utteranceIndices) {
 				const auto& event = events[idx];
 				int threadNum = threadIdToNumber[event.threadId];
 				
-				// Handle decoder creation events
-				if (event.description.find("Decoder #") != std::string::npos) {
-					double relativeTime = duration_cast<milliseconds>(event.timestamp - startTime).count() / 1000.0;
-					std::cerr << fmt::format("[T{}] {:.2f}s: {}",
-						threadNum,
-						relativeTime,
-						event.description);
-					std::cerr << "\n";
+				// Truncate text if too long
+				std::string displayText = event.utteranceText;
+				if (displayText.length() > 40) {
+					displayText = displayText.substr(0, 37) + "...";
 				}
-				// Handle utterance events
-				else if (event.isUtterance) {
-					if (event.processingDuration > 0.0) {
-						// Show processing duration for new format
-						std::cerr << fmt::format("[T{}] {:.2f}s: Utterance {} ({:.2f}-{:.2f}s)",
-							threadNum,
-							event.processingDuration,
-							event.utteranceIndex,
-							event.utteranceStart,
-							event.utteranceEnd);
-					} else {
-						// Fallback to old format (completion timestamp)
-						double relativeTime = duration_cast<milliseconds>(event.timestamp - startTime).count() / 1000.0;
-						std::cerr << fmt::format("[T{}] {:.2f}s: Utterance {} ({:.2f}-{:.2f}s)",
-							threadNum,
-							relativeTime,
-							event.utteranceIndex,
-							event.utteranceStart,
-							event.utteranceEnd);
-					}
-					
-					if (!event.utteranceText.empty() && event.utteranceText != " ") {
-						std::cerr << " \"" << event.utteranceText << "\"";
-					}
-					std::cerr << "\n";
+				
+				std::cerr << fmt::format("│ T{:<5} │ {:>10.2f}s │ #{:<8} │ {:>6.2f}s - {:<7.2f}s │ {:<40} │\n",
+					threadNum,
+					event.processingDuration,
+					event.utteranceIndex,
+					event.utteranceStart,
+					event.utteranceEnd,
+					displayText);
+			}
+			
+			std::cerr << "└────────┴──────────────┴───────────┴────────────────────┴──────────────────────────────────────────┘\n";
+			
+			// Show decoder creation separately
+			if (!decoderIndices.empty()) {
+				std::cerr << "\nDecoder Creation Timeline:\n";
+				
+				// Sort decoders by timestamp
+				std::sort(decoderIndices.begin(), decoderIndices.end(), 
+					[this](size_t a, size_t b) {
+						return events[a].timestamp < events[b].timestamp;
+					});
+				
+				for (size_t idx : decoderIndices) {
+					const auto& event = events[idx];
+					int threadNum = threadIdToNumber[event.threadId];
+					std::cerr << fmt::format("T{}: {}\n", threadNum, event.description);
 				}
 			}
 		}

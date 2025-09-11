@@ -10,6 +10,8 @@
 #include "audio/processing.h"
 #include "time/timedLogging.h"
 #include "../rhubarb/semanticEntries.h"
+#include <chrono>
+#include <format.h>
 
 extern "C" {
 #include <state_align_search.h>
@@ -252,14 +254,19 @@ static UtteranceResult utteranceToPhones(
 	const AudioClip& audioClip,
 	TimeRange utteranceTimeRange,
 	ps_decoder_t& decoder,
-	ProgressSink& utteranceProgressSink
+	ProgressSink& utteranceProgressSink,
+	int utteranceIndex
 ) {
+	
 	ProgressMerger utteranceProgressMerger(utteranceProgressSink);
 	ProgressSink& wordRecognitionProgressSink =
 		utteranceProgressMerger.addSource("word recognition (PocketSphinx recognizer)", 1.0);
 	ProgressSink& alignmentProgressSink =
 		utteranceProgressMerger.addSource("alignment (PocketSphinx recognizer)", 0.5);
 
+	// Start timing audio preparation
+	auto audioPrepStart = std::chrono::steady_clock::now();
+	
 	// Pad time range to give PocketSphinx some breathing room
 	TimeRange paddedTimeRange = utteranceTimeRange;
 	const centiseconds padding(3);
@@ -270,12 +277,21 @@ static UtteranceResult utteranceToPhones(
 		| segment(paddedTimeRange)
 		| resample(sphinxSampleRate);
 	const auto audioBuffer = copyTo16bitBuffer(*clipSegment);
+	
+	auto audioPrepEnd = std::chrono::steady_clock::now();
+	double audioPrepDuration = std::chrono::duration<double>(audioPrepEnd - audioPrepStart).count();
+	logging::log(UtteranceSubStepEntry(utteranceIndex, "Audio Preparation", audioPrepDuration));
 
 	// Get words
+	auto wordRecognitionStart = std::chrono::steady_clock::now();
 	BoundedTimeline<string> words = recognizeWords(audioBuffer, decoder);
+	auto wordRecognitionEnd = std::chrono::steady_clock::now();
+	double wordRecognitionDuration = std::chrono::duration<double>(wordRecognitionEnd - wordRecognitionStart).count();
+	logging::log(UtteranceSubStepEntry(utteranceIndex, "Word Recognition", wordRecognitionDuration));
 	wordRecognitionProgressSink.reportProgress(1.0);
 
 	// Log utterance text
+	auto textExtractionStart = std::chrono::steady_clock::now();
 	string text;
 	for (auto& timedWord : words) {
 		string word = timedWord.getValue();
@@ -289,13 +305,18 @@ static UtteranceResult utteranceToPhones(
 		}
 		text += word;
 	}
+	auto textExtractionEnd = std::chrono::steady_clock::now();
+	double textExtractionDuration = std::chrono::duration<double>(textExtractionEnd - textExtractionStart).count();
+	logging::log(UtteranceSubStepEntry(utteranceIndex, "Text Extraction", textExtractionDuration));
 	logTimedEvent("utterance", utteranceTimeRange, text);
 
 	// Log words
+	auto loggingStart = std::chrono::steady_clock::now();
 	for (Timed<string> timedWord : words) {
 		timedWord.getTimeRange().shift(paddedTimeRange.getStart());
 		logTimedEvent("word", timedWord);
 	}
+	auto loggingMid1 = std::chrono::steady_clock::now();
 
 	// Convert word strings to word IDs using dictionary
 	vector<s3wid_t> wordIds;
@@ -305,28 +326,52 @@ static UtteranceResult utteranceToPhones(
 	}
 
 	// Align the words' phones with speech
+	auto alignmentStart = std::chrono::steady_clock::now();
 #if BOOST_VERSION < 105600 // Support legacy syntax
 #define value_or get_value_or
 #endif
 	Timeline<Phone> utterancePhones = getPhoneAlignment(wordIds, audioBuffer, decoder)
 		.value_or(ContinuousTimeline<Phone>(clipSegment->getTruncatedRange(), Phone::Noise));
+	auto alignmentEnd = std::chrono::steady_clock::now();
+	double alignmentDuration = std::chrono::duration<double>(alignmentEnd - alignmentStart).count();
+	logging::log(UtteranceSubStepEntry(utteranceIndex, "Phone Alignment", alignmentDuration));
 	alignmentProgressSink.reportProgress(1.0);
 	utterancePhones.shift(paddedTimeRange.getStart());
 
 	// Log raw phones
+	auto loggingMid2 = std::chrono::steady_clock::now();
 	for (const auto& timedPhone : utterancePhones) {
 		logTimedEvent("rawPhone", timedPhone);
 	}
+	auto loggingMid3 = std::chrono::steady_clock::now();
 
 	// Guess positions of noise sounds
+	auto noiseDetectionStart = std::chrono::steady_clock::now();
 	JoiningTimeline<void> noiseSounds = getNoiseSounds(utteranceTimeRange, utterancePhones);
 	for (const auto& noiseSound : noiseSounds) {
 		utterancePhones.set(noiseSound.getTimeRange(), Phone::Noise);
 	}
+	auto noiseDetectionEnd = std::chrono::steady_clock::now();
+	double noiseDetectionDuration = std::chrono::duration<double>(noiseDetectionEnd - noiseDetectionStart).count();
+	logging::log(UtteranceSubStepEntry(utteranceIndex, "Noise Detection", noiseDetectionDuration));
 
 	// Log phones
 	for (const auto& timedPhone : utterancePhones) {
 		logTimedEvent("phone", timedPhone);
+	}
+	auto loggingEnd = std::chrono::steady_clock::now();
+	
+	// Calculate total logging time
+	double wordLoggingTime = std::chrono::duration<double>(loggingMid1 - loggingStart).count();
+	double rawPhoneLoggingTime = std::chrono::duration<double>(loggingMid3 - loggingMid2).count();
+	double phoneLoggingTime = std::chrono::duration<double>(loggingEnd - noiseDetectionEnd).count();
+	double totalLoggingTime = wordLoggingTime + rawPhoneLoggingTime + phoneLoggingTime;
+	
+	// Log the logging overhead
+	if (totalLoggingTime > 0.001) { // Only log if significant
+		std::string loggingDetails = fmt::format("words: {:.3f}s, raw phones: {:.3f}s, phones: {:.3f}s",
+			wordLoggingTime, rawPhoneLoggingTime, phoneLoggingTime);
+		logging::log(UtteranceSubStepEntry(utteranceIndex, "Debug Logging", totalLoggingTime, loggingDetails));
 	}
 
 	return UtteranceResult{ utterancePhones, text };

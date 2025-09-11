@@ -126,4 +126,12 @@ private:
 	
 	// Sub-phase timings
 	std::map<std::string, double> subPhaseTimings;
+	
+	// Utterance sub-step timings
+	struct UtteranceSubStep {
+		std::string name;
+		double duration;
+		std::string details;
+	};
+	std::map<int, std::vector<UtteranceSubStep>> utteranceSubSteps;
 };

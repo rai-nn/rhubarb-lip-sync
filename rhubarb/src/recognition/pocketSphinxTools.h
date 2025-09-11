@@ -25,7 +25,8 @@ typedef std::function<UtteranceResult(
 	const AudioClip& audioClip,
 	TimeRange utteranceTimeRange,
 	ps_decoder_t& decoder,
-	ProgressSink& utteranceProgressSink
+	ProgressSink& utteranceProgressSink,
+	int utteranceIndex
 )> utteranceToPhonesFunction;
 
 BoundedTimeline<Phone> recognizePhones(
