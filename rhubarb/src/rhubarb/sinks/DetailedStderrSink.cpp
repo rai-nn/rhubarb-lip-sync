@@ -40,8 +40,15 @@ void DetailedStderrSink::receive(const logging::Entry& entry) {
 			completedUtterances = 0;
 			startPhase(PipelinePhase::SpeechRecognition, "Recognizing speech...");
 		} else if (phaseName == "AnimationGeneration") {
-			endPhase(currentPhase);
-			startPhase(PipelinePhase::AnimationGeneration, "Generating animation...");
+			// Only start animation phase if we've completed speech recognition
+			// or if we're coming from a valid previous phase.
+			// This prevents the duplicate "Generating animation..." message that happens
+			// early during initialization
+			if (currentPhase == PipelinePhase::SpeechRecognition || 
+			    phaseDurations.count(PipelinePhase::SpeechRecognition) > 0) {
+				endPhase(currentPhase);
+				startPhase(PipelinePhase::AnimationGeneration, "Generating animation...");
+			}
 		} else if (phaseName == "Export") {
 			endPhase(currentPhase);
 			startPhase(PipelinePhase::Export, "Exporting results...");
@@ -166,16 +173,18 @@ void DetailedStderrSink::receive(const logging::Entry& entry) {
 					}
 				}
 			}
-			else if (message.find("Speech recognition using") != string::npos && message.find("end") != string::npos) {
-				endPhase(PipelinePhase::SpeechRecognition);
-				startPhase(PipelinePhase::AnimationGeneration, "Generating animation...");
-			}
-			else if (message.find("Starting animation") != string::npos) {
-				if (currentPhase == PipelinePhase::VoiceActivityDetection) {
-					endPhase(PipelinePhase::VoiceActivityDetection);
-				}
-				startPhase(PipelinePhase::AnimationGeneration, "Generating animation...");
-			}
+			// Commented out string-based detection since we have proper semantic entries now
+			// This prevents duplicate "Generating animation..." messages
+			// else if (message.find("Speech recognition using") != string::npos && message.find("end") != string::npos) {
+			// 	endPhase(PipelinePhase::SpeechRecognition);
+			// 	startPhase(PipelinePhase::AnimationGeneration, "Generating animation...");
+			// }
+			// else if (message.find("Starting animation") != string::npos) {
+			// 	if (currentPhase == PipelinePhase::VoiceActivityDetection) {
+			// 		endPhase(PipelinePhase::VoiceActivityDetection);
+			// 	}
+			// 	startPhase(PipelinePhase::AnimationGeneration, "Generating animation...");
+			// }
 			else if (message.find("Starting export") != string::npos || message.find("Done exporting") != string::npos) {
 				if (currentPhase == PipelinePhase::AnimationGeneration) {
 					endPhase(PipelinePhase::AnimationGeneration);
@@ -255,11 +264,16 @@ void DetailedStderrSink::printSummary() {
 	std::cerr << "============================================\n\n";
 	
 	// Phase summaries
-	if (phaseDurations.count(PipelinePhase::AudioLoading)) {
-		std::cerr << "PHASE 1: Audio Loading\n";
-		std::cerr << "└─ Duration: " << formatDuration(phaseDurations[PipelinePhase::AudioLoading]) << "\n";
+	// Always show Phase 1 even if duration is not tracked properly
+	if (phaseDurations.count(PipelinePhase::AudioLoading) || audioDuration > 0) {
+		std::cerr << "PHASE 1: Entry Point and Initialization\n";
+		if (phaseDurations.count(PipelinePhase::AudioLoading)) {
+			std::cerr << "└─ Duration: " << formatDuration(phaseDurations[PipelinePhase::AudioLoading]) << "\n";
+		} else {
+			std::cerr << "└─ Duration: <1ms\n";
+		}
 		if (audioDuration > 0) {
-			std::cerr << "└─ Audio: " << formatDuration(audioDuration);
+			std::cerr << "└─ Audio loaded: " << formatDuration(audioDuration);
 			if (sampleRate > 0) {
 				std::cerr << ", " << sampleRate << "Hz";
 			}
@@ -269,7 +283,7 @@ void DetailedStderrSink::printSummary() {
 	}
 	
 	if (phaseDurations.count(PipelinePhase::VoiceActivityDetection)) {
-		std::cerr << "PHASE 2: Voice Activity Detection\n";
+		std::cerr << "PHASE 2: Audio Processing (Voice Activity Detection)\n";
 		std::cerr << "└─ Duration: " << formatDuration(phaseDurations[PipelinePhase::VoiceActivityDetection]) << "\n";
 		if (speechSegmentCount > 0 || silenceSegmentCount > 0) {
 			std::cerr << "└─ Speech segments: " << speechSegmentCount << "\n";
@@ -294,6 +308,13 @@ void DetailedStderrSink::printSummary() {
 		if (totalPhonemes > 0) {
 			std::cerr << "└─ Phonemes detected: " << totalPhonemes << "\n";
 		}
+		
+		// Sub-phases breakdown
+		std::cerr << "\nSub-phases:\n";
+		std::cerr << "└─ 3.1: Decoder Initialization (see timeline below)\n";
+		std::cerr << "└─ 3.2: Parallel Utterance Processing (see timeline below)\n";
+		std::cerr << "└─ 3.3: Utterance-Level Processing (see timeline below)\n";
+		std::cerr << "└─ 3.4: Timeline Assembly (automatic during processing)\n";
 		
 		// Thread execution timeline (if enabled and multi-threaded)
 		if (includeThreadTimeline && maxThreadsUsed > 1) {
