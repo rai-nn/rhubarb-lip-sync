@@ -403,15 +403,28 @@ JoiningTimeline<void> getNoiseSounds(TimeRange utteranceTimeRange, const Timelin
 	return noiseSounds;
 }
 
-BoundedTimeline<string> recognizeWords(const vector<int16_t>& audioBuffer, ps_decoder_t& decoder) {
+BoundedTimeline<string> recognizeWords(const vector<int16_t>& audioBuffer, ps_decoder_t& decoder, int utteranceIndex) {
 	// Restart timing at 0
+	auto streamInitStart = std::chrono::steady_clock::now();
 	ps_start_stream(&decoder);
+	auto streamInitEnd = std::chrono::steady_clock::now();
+	double streamInitDuration = std::chrono::duration<double>(streamInitEnd - streamInitStart).count();
+	if (utteranceIndex >= 0 && streamInitDuration > 0.0001) {
+		logging::log(UtteranceSubStepEntry(utteranceIndex, "Word Recognition: Stream Init", streamInitDuration));
+	}
 
 	// Start recognition
+	auto uttStartBegin = std::chrono::steady_clock::now();
 	int error = ps_start_utt(&decoder);
 	if (error) throw runtime_error("Error starting utterance processing for word recognition.");
+	auto uttStartEnd = std::chrono::steady_clock::now();
+	double uttStartDuration = std::chrono::duration<double>(uttStartEnd - uttStartBegin).count();
+	if (utteranceIndex >= 0 && uttStartDuration > 0.0001) {
+		logging::log(UtteranceSubStepEntry(utteranceIndex, "Word Recognition: Utterance Start", uttStartDuration));
+	}
 
 	// Process entire audio clip
+	auto acousticProcessingStart = std::chrono::steady_clock::now();
 	const bool noRecognition = false;
 	const bool fullUtterance = true;
 	const int searchedFrameCount =
@@ -419,10 +432,21 @@ BoundedTimeline<string> recognizeWords(const vector<int16_t>& audioBuffer, ps_de
 	if (searchedFrameCount < 0) {
 		throw runtime_error("Error analyzing raw audio data for word recognition.");
 	}
+	auto acousticProcessingEnd = std::chrono::steady_clock::now();
+	double acousticProcessingDuration = std::chrono::duration<double>(acousticProcessingEnd - acousticProcessingStart).count();
+	if (utteranceIndex >= 0) {
+		logging::log(UtteranceSubStepEntry(utteranceIndex, "Word Recognition: Acoustic Processing", acousticProcessingDuration));
+	}
 
 	// End recognition
+	auto uttEndStart = std::chrono::steady_clock::now();
 	error = ps_end_utt(&decoder);
 	if (error) throw runtime_error("Error ending utterance processing for word recognition.");
+	auto uttEndEnd = std::chrono::steady_clock::now();
+	double uttEndDuration = std::chrono::duration<double>(uttEndEnd - uttEndStart).count();
+	if (utteranceIndex >= 0 && uttEndDuration > 0.0001) {
+		logging::log(UtteranceSubStepEntry(utteranceIndex, "Word Recognition: Utterance End", uttEndDuration));
+	}
 
 	BoundedTimeline<string> result(
 		TimeRange(0_cs, centiseconds(100 * audioBuffer.size() / sphinxSampleRate))
@@ -442,11 +466,17 @@ BoundedTimeline<string> recognizeWords(const vector<int16_t>& audioBuffer, ps_de
 	}
 
 	// Collect words
+	auto wordExtractionStart = std::chrono::steady_clock::now();
 	for (ps_seg_t* it = ps_seg_iter(&decoder); it; it = ps_seg_next(it)) {
 		const char* word = ps_seg_word(it);
 		int firstFrame, lastFrame;
 		ps_seg_frames(it, &firstFrame, &lastFrame);
 		result.set(centiseconds(firstFrame), centiseconds(lastFrame + 1), word);
+	}
+	auto wordExtractionEnd = std::chrono::steady_clock::now();
+	double wordExtractionDuration = std::chrono::duration<double>(wordExtractionEnd - wordExtractionStart).count();
+	if (utteranceIndex >= 0 && wordExtractionDuration > 0.0001) {
+		logging::log(UtteranceSubStepEntry(utteranceIndex, "Word Recognition: Word Extraction", wordExtractionDuration));
 	}
 
 	return result;

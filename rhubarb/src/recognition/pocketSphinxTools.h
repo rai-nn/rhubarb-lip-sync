@@ -46,6 +46,7 @@ JoiningTimeline<void> getNoiseSounds(TimeRange utteranceTimeRange, const Timelin
 
 BoundedTimeline<std::string> recognizeWords(
 	const std::vector<int16_t>& audioBuffer,
-	ps_decoder_t& decoder
+	ps_decoder_t& decoder,
+	int utteranceIndex = -1
 );
 

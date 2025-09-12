@@ -155,11 +155,13 @@ static lambda_unique_ptr<ps_decoder_t> createDecoder(optional<std::string> dialo
 optional<Timeline<Phone>> getPhoneAlignment(
 	const vector<s3wid_t>& wordIds,
 	const vector<int16_t>& audioBuffer,
-	ps_decoder_t& decoder)
+	ps_decoder_t& decoder,
+	int utteranceIndex)
 {
 	if (wordIds.empty()) return boost::none;
 
 	// Create alignment list
+	auto alignmentSetupStart = std::chrono::steady_clock::now();
 	lambda_unique_ptr<ps_alignment_t> alignment(
 		ps_alignment_init(decoder.d2p),
 		[](ps_alignment_t* alignment) { ps_alignment_free(alignment); });
@@ -170,17 +172,34 @@ optional<Timeline<Phone>> getPhoneAlignment(
 	}
 	int error = ps_alignment_populate(alignment.get());
 	if (error) throw runtime_error("Error populating alignment struct.");
+	auto alignmentSetupEnd = std::chrono::steady_clock::now();
+	double alignmentSetupDuration = std::chrono::duration<double>(alignmentSetupEnd - alignmentSetupStart).count();
+	if (utteranceIndex >= 0 && alignmentSetupDuration > 0.0001) {
+		logging::log(UtteranceSubStepEntry(utteranceIndex, "Phone Alignment: Alignment Setup", alignmentSetupDuration));
+	}
 
 	// Create search structure
+	auto searchInitStart = std::chrono::steady_clock::now();
 	acmod_t* acousticModel = decoder.acmod;
 	lambda_unique_ptr<ps_search_t> search(
 		state_align_search_init("state_align", decoder.config, acousticModel, alignment.get()),
 		[](ps_search_t* search) { ps_search_free(search); });
 	if (!search) throw runtime_error("Error creating search.");
+	auto searchInitEnd = std::chrono::steady_clock::now();
+	double searchInitDuration = std::chrono::duration<double>(searchInitEnd - searchInitStart).count();
+	if (utteranceIndex >= 0 && searchInitDuration > 0.0001) {
+		logging::log(UtteranceSubStepEntry(utteranceIndex, "Phone Alignment: Search Init", searchInitDuration));
+	}
 
 	// Start recognition
+	auto acmodStartStart = std::chrono::steady_clock::now();
 	error = acmod_start_utt(acousticModel);
 	if (error) throw runtime_error("Error starting utterance processing for alignment.");
+	auto acmodStartEnd = std::chrono::steady_clock::now();
+	double acmodStartDuration = std::chrono::duration<double>(acmodStartEnd - acmodStartStart).count();
+	if (utteranceIndex >= 0 && acmodStartDuration > 0.0001) {
+		logging::log(UtteranceSubStepEntry(utteranceIndex, "Phone Alignment: Acoustic Model Start", acmodStartDuration));
+	}
 
 	{
 		// Eventually end recognition
@@ -190,6 +209,7 @@ optional<Timeline<Phone>> getPhoneAlignment(
 		ps_search_start(search.get());
 
 		// Process entire audio clip
+		auto featureExtractionStart = std::chrono::steady_clock::now();
 		const int16* nextSample = audioBuffer.data();
 		size_t remainingSamples = audioBuffer.size();
 		const bool fullUtterance = true;
@@ -199,13 +219,25 @@ optional<Timeline<Phone>> getPhoneAlignment(
 				acmod_advance(acousticModel);
 			}
 		}
+		auto featureExtractionEnd = std::chrono::steady_clock::now();
+		double featureExtractionDuration = std::chrono::duration<double>(featureExtractionEnd - featureExtractionStart).count();
+		if (utteranceIndex >= 0) {
+			logging::log(UtteranceSubStepEntry(utteranceIndex, "Phone Alignment: Feature Extraction", featureExtractionDuration));
+		}
 
 		// End search
+		auto searchFinishStart = std::chrono::steady_clock::now();
 		error = ps_search_finish(search.get());
 		if (error) return boost::none;
+		auto searchFinishEnd = std::chrono::steady_clock::now();
+		double searchFinishDuration = std::chrono::duration<double>(searchFinishEnd - searchFinishStart).count();
+		if (utteranceIndex >= 0 && searchFinishDuration > 0.0001) {
+			logging::log(UtteranceSubStepEntry(utteranceIndex, "Phone Alignment: Search Finish", searchFinishDuration));
+		}
 	}
 
 	// Extract phones with timestamps
+	auto phoneExtractionStart = std::chrono::steady_clock::now();
 	char** phoneNames = decoder.dict->mdef->ciname;
 	Timeline<Phone> result;
 	for (
@@ -231,6 +263,12 @@ optional<Timeline<Phone>> getPhoneAlignment(
 		const Timed<Phone> timedPhone(start, start + duration, phone);
 		result.set(timedPhone);
 	}
+	auto phoneExtractionEnd = std::chrono::steady_clock::now();
+	double phoneExtractionDuration = std::chrono::duration<double>(phoneExtractionEnd - phoneExtractionStart).count();
+	if (utteranceIndex >= 0 && phoneExtractionDuration > 0.0001) {
+		logging::log(UtteranceSubStepEntry(utteranceIndex, "Phone Alignment: Phone Extraction", phoneExtractionDuration));
+	}
+	
 	return result;
 }
 
@@ -284,10 +322,11 @@ static UtteranceResult utteranceToPhones(
 
 	// Get words
 	auto wordRecognitionStart = std::chrono::steady_clock::now();
-	BoundedTimeline<string> words = recognizeWords(audioBuffer, decoder);
+	BoundedTimeline<string> words = recognizeWords(audioBuffer, decoder, utteranceIndex);
 	auto wordRecognitionEnd = std::chrono::steady_clock::now();
 	double wordRecognitionDuration = std::chrono::duration<double>(wordRecognitionEnd - wordRecognitionStart).count();
-	logging::log(UtteranceSubStepEntry(utteranceIndex, "Word Recognition", wordRecognitionDuration));
+	// Don't log parent "Word Recognition" since we log detailed sub-steps
+	// logging::log(UtteranceSubStepEntry(utteranceIndex, "Word Recognition", wordRecognitionDuration));
 	wordRecognitionProgressSink.reportProgress(1.0);
 
 	// Log utterance text
@@ -330,11 +369,12 @@ static UtteranceResult utteranceToPhones(
 #if BOOST_VERSION < 105600 // Support legacy syntax
 #define value_or get_value_or
 #endif
-	Timeline<Phone> utterancePhones = getPhoneAlignment(wordIds, audioBuffer, decoder)
+	Timeline<Phone> utterancePhones = getPhoneAlignment(wordIds, audioBuffer, decoder, utteranceIndex)
 		.value_or(ContinuousTimeline<Phone>(clipSegment->getTruncatedRange(), Phone::Noise));
 	auto alignmentEnd = std::chrono::steady_clock::now();
 	double alignmentDuration = std::chrono::duration<double>(alignmentEnd - alignmentStart).count();
-	logging::log(UtteranceSubStepEntry(utteranceIndex, "Phone Alignment", alignmentDuration));
+	// Don't log parent "Phone Alignment" since we log detailed sub-steps
+	// logging::log(UtteranceSubStepEntry(utteranceIndex, "Phone Alignment", alignmentDuration));
 	alignmentProgressSink.reportProgress(1.0);
 	utterancePhones.shift(paddedTimeRange.getStart());
 
