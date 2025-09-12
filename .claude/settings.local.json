@@ -28,7 +28,9 @@
       "Bash(do echo \"Run $i:\")",
       "Bash(done)",
       "Bash(/usr/bin/time:*)",
-      "Bash(make:*)"
+      "Bash(make:*)",
+      "Bash(./build-local.sh:*)",
+      "Read(//Users/peterstajger/git/bob/visemes/**)"
     ],
     "deny": []
   }

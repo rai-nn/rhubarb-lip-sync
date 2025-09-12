@@ -8,7 +8,30 @@ Rhubarb Lip Sync is a 2D mouth animation tool that analyzes audio files, recogni
 
 ## Build Commands
 
-### Quick Build (All Platforms)
+### Recommended: Automated Build Script
+Use the `build-local.sh` script for building and deploying to the visemes server:
+
+```bash
+# Build and deploy to ../lib/generators/implementations/rhubarb/binary/
+./build-local.sh
+
+# Clean build and deploy
+./build-local.sh --clean
+
+# Clean build, deploy, and test
+./build-local.sh --clean --test
+```
+
+This script automatically:
+- Builds only the Rhubarb executable (avoiding Spine integration issues)
+- Copies the binary to the visemes server location
+- Works on both macOS and Linux
+- Handles all configuration automatically
+
+### Manual Build (Alternative Method)
+Use manual build only when you need specific control over the build process:
+
+#### Quick Build (All Platforms)
 ```bash
 # Build just the main Rhubarb executable (recommended)
 cd build
@@ -17,7 +40,7 @@ cmake --build . --config Release --target rhubarb
 # The executable will be at: build/rhubarb/rhubarb
 ```
 
-### macOS
+#### macOS
 ```bash
 # Build release version with packaging (builds everything)
 ./package-osx.sh
@@ -30,7 +53,7 @@ cmake --build . --config Release --target rhubarb  # Main executable only
 cmake --build . --config Release  # Build everything (may fail on Spine integration)
 ```
 
-### Linux
+#### Linux
 ```bash
 mkdir build && cd build
 cmake .. -D CMAKE_C_COMPILER=gcc-10 -D CMAKE_CXX_COMPILER=g++-10
@@ -41,7 +64,8 @@ cmake --build . --config Release  # Build everything (may fail on Spine integrat
 
 ## Build Quick Reference
 
-- To build just the Rhubarb executable: `cd build && cmake --build . --target rhubarb`
+- **Preferred**: Use `./build-local.sh` for automated build and deployment
+- To build just the Rhubarb executable manually: `cd build && cmake --build . --target rhubarb`
 - The executable will be located at: `build/rhubarb/rhubarb`
 - Use `--target rhubarb` to avoid Java version issues with the Spine integration component
 
@@ -117,3 +141,4 @@ cmake --build . --config Release --target runTests
 - Cross-platform: macOS (Xcode), Linux (GCC/Clang)
 - CI/CD via GitHub Actions (.github/workflows/ci.yml)
 - when running rhubarb command line for testing purposes is needed, you can find wav files in /resources/audio.wav.
+- When you need to run rhubarb command line, you SHOULD use the local built version from ./build/rhubarb/ folder.
