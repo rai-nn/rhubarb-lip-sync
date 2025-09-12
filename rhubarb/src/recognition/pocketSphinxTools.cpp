@@ -297,8 +297,9 @@ BoundedTimeline<Phone> recognizePhones(
 			// Use the formula: audio_duration_seconds / 5
 			// This assumes 5 seconds of audio per thread is optimal
 			int durationBasedLimit = static_cast<int>(audioDurationSeconds / 5);
-			if (durationBasedLimit < 1) {
-				durationBasedLimit = 1;
+			// Ensure minimum of 4 threads for better performance even on short audio
+			if (durationBasedLimit < 4) {
+				durationBasedLimit = 4;
 			}
 			
 			// Also limit by available CPU cores (use 4 as reasonable default)
