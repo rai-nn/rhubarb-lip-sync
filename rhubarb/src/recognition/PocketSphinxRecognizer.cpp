@@ -133,6 +133,19 @@ static lambda_unique_ptr<ps_decoder_t> createDecoder(optional<std::string> dialo
 			"-remove_silence", "no",
 			// Perform per-utterance cepstral mean normalization
 			"-cmn", "batch",
+			// Beam search parameters for precision (comment out for speed mode)
+			// Using wider beams for more accurate phoneme detection
+			"-beam", "1e-40",  // Wider than default 1e-48 for better accuracy
+			"-pbeam", "1e-40", // Much wider phone beam for precise phoneme boundaries
+			"-wbeam", "1e-20", // Very wide word beam to catch all transitions
+			// Increase max active HMMs for comprehensive search
+			"-maxhmmpf", "50000", // Increased from default 30000
+			"-maxwpf", "60",      // Increased from default 40
+			// Language model weight - balanced for acoustic precision
+			"-lw", "6.5",         // Default value, trust acoustic model more
+			// Additional precision parameters
+			"-lpbeam", "1e-30",  // Lookahead phone beam
+			"-lponlybeam", "1e-30", // Phone-only beam
 			nullptr),
 		[](cmd_ln_t* config) { cmd_ln_free_r(config); });
 	if (!config) throw runtime_error("Error creating configuration.");

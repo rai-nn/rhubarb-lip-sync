@@ -22,7 +22,13 @@
       "Bash(ffprobe:*)",
       "Bash(tee:*)",
       "Read(//Users/peterstajger/git/rhubarb-lip-sync/**)",
-      "Bash(ffmpeg:*)"
+      "Bash(ffmpeg:*)",
+      "Bash(time:*)",
+      "Bash(for i in 1 2 3)",
+      "Bash(do echo \"Run $i:\")",
+      "Bash(done)",
+      "Bash(/usr/bin/time:*)",
+      "Bash(make:*)"
     ],
     "deny": []
   }
