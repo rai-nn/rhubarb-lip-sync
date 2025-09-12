@@ -5,13 +5,13 @@
 #include "audio/DcOffset.h"
 #include "audio/voiceActivityDetection.h"
 #include "tools/parallel.h"
-#include "tools/ObjectPool.h"
 #include "time/timedLogging.h"
 #include "../rhubarb/semanticEntries.h"
 #include <chrono>
 #include <atomic>
 #include <sstream>
 #include <thread>
+#include <unordered_map>
 
 extern "C" {
 #include <sphinxbase/err.h>
@@ -118,26 +118,10 @@ BoundedTimeline<Phone> recognizePhones(
 	auto recognitionStart = std::chrono::steady_clock::now();
 	logging::log(PhaseStartEntry("SpeechRecognition", utterances.size()));
 	
-	// Prepare pool of decoders with timing wrapper
+	// Thread-local decoder storage for parallel creation
+	std::unordered_map<std::thread::id, lambda_unique_ptr<ps_decoder_t>> threadDecoders;
+	std::mutex decoderMapMutex;  // Only for map insertion, not decoder creation
 	std::atomic<int> decoderCount(0);
-	ObjectPool<ps_decoder_t, lambda_unique_ptr<ps_decoder_t>> decoderPool(
-		[&] { 
-			auto start = std::chrono::steady_clock::now();
-			int currentCount = decoderCount.load();
-			logging::debugFormat("Creating decoder #{} (pool was empty)...", currentCount + 1);
-			
-			auto decoder = createDecoder(dialog);
-			
-			auto end = std::chrono::steady_clock::now();
-			double duration = std::chrono::duration<double>(end - start).count();
-			decoderCount++;
-			logging::debugFormat("Decoder #{} created in {:.2f}s", currentCount + 1, duration);
-			
-			// Log using semantic entry for detailed mode
-			logging::log(DecoderCreationEntry(currentCount + 1, duration));
-			
-			return decoder;
-		});
 
 	BoundedTimeline<Phone> phones(audioClip->getTruncatedRange());
 	std::mutex resultMutex;
@@ -162,32 +146,63 @@ BoundedTimeline<Phone> recognizePhones(
 			"" // Text not available at start
 		));
 		
-		// Log which thread is about to acquire decoder
+		// Get thread ID
+		std::thread::id threadId = std::this_thread::get_id();
 		std::stringstream ss;
-		ss << std::this_thread::get_id();
-		logging::debugFormat("Thread {} requesting decoder for utterance {} ({:.2f}-{:.2f}s)...", 
-		                    ss.str(), utteranceIndex,
-		                    timedUtterance.getTimeRange().getStart().count() / 100.0,
-		                    timedUtterance.getTimeRange().getEnd().count() / 100.0);
+		ss << threadId;
 		
-		// Detect phones for utterance
+		// Get or create decoder for this thread
+		lambda_unique_ptr<ps_decoder_t>* decoderPtr = nullptr;
 		auto beforeAcquire = std::chrono::steady_clock::now();
-		const auto decoder = decoderPool.acquire();
+		
+		// Check if this thread already has a decoder
+		{
+			std::lock_guard<std::mutex> lock(decoderMapMutex);
+			auto it = threadDecoders.find(threadId);
+			if (it != threadDecoders.end()) {
+				decoderPtr = &(it->second);
+			}
+		}
+		
+		// If no decoder exists for this thread, create one (outside the mutex!)
+		if (!decoderPtr) {
+			logging::debugFormat("Thread {} creating its decoder for utterance {} ({:.2f}-{:.2f}s)...", 
+			                    ss.str(), utteranceIndex,
+			                    timedUtterance.getTimeRange().getStart().count() / 100.0,
+			                    timedUtterance.getTimeRange().getEnd().count() / 100.0);
+			
+			// Create decoder without holding any mutex (parallel creation!)
+			auto creationStart = std::chrono::steady_clock::now();
+			auto newDecoder = createDecoder(dialog);
+			auto creationEnd = std::chrono::steady_clock::now();
+			double creationDuration = std::chrono::duration<double>(creationEnd - creationStart).count();
+			
+			// Track decoder count and log creation
+			int decoderNumber = decoderCount.fetch_add(1) + 1;
+			logging::debugFormat("Thread {} created decoder #{} in {:.2f}s", ss.str(), decoderNumber, creationDuration);
+			logging::log(DecoderCreationEntry(decoderNumber, creationDuration));
+			
+			// Store the decoder in the map (brief mutex hold)
+			{
+				std::lock_guard<std::mutex> lock(decoderMapMutex);
+				auto result = threadDecoders.emplace(threadId, std::move(newDecoder));
+				decoderPtr = &(result.first->second);
+			}
+		}
 		
 		auto decoderAcquired = std::chrono::steady_clock::now();
 		double acquireTime = std::chrono::duration<double>(decoderAcquired - beforeAcquire).count();
-		logging::debugFormat("Thread {} acquired decoder in {:.2f}s (total acquire time including any waiting), starting utterance {} processing", 
-		                    ss.str(), acquireTime, utteranceIndex);
 		
 		// Log decoder acquisition as a sub-step
-		// Heuristic: if acquisition took > 0.1s, a new decoder was likely created
-		std::string acquireDetails = (acquireTime > 0.1) ? "new decoder created" : "from pool";
+		std::string acquireDetails = (acquireTime > 0.1) ? "created new decoder" : "reused existing";
+		logging::debugFormat("Thread {} using decoder ({}), starting utterance {} processing", 
+		                    ss.str(), acquireDetails, utteranceIndex);
 		logging::log(UtteranceSubStepEntry(utteranceIndex, "Decoder Acquisition", acquireTime, acquireDetails));
 		
 		UtteranceResult utteranceResult = utteranceToPhones(
 			*audioClip,
 			timedUtterance.getTimeRange(),
-			*decoder,
+			**decoderPtr,  // Dereference the pointer to the unique_ptr, then dereference the unique_ptr
 			utteranceProgressSink,
 			utteranceIndex
 		);
@@ -315,12 +330,10 @@ BoundedTimeline<Phone> recognizePhones(
 		// Debug logging to understand thread allocation
 		logging::debugFormat("Thread allocation constraints: maxThreads={}, utteranceCount={}, audioDuration={}s, finalThreadCount={}", 
 			maxThreads, utteranceCount, audioDurationSeconds, threadCount);
-		logging::debugFormat("Speech recognition using {} threads -- start", threadCount);
+		logging::debugFormat("Speech recognition using {} threads with parallel decoder creation -- start", threadCount);
 		
-		// Log pool state before processing
 		logging::debugFormat("Starting parallel processing with {} threads for {} utterances", 
 		                    threadCount, utterances.size());
-		logging::debugFormat("Decoder pool initially empty: {}", decoderPool.empty());
 		
 		runParallel(
 			"speech recognition (PocketSphinx tools)",
@@ -331,10 +344,10 @@ BoundedTimeline<Phone> recognizePhones(
 			getUtteranceProgressWeight
 		);
 		
-		// Log pool state after processing
-		logging::debugFormat("Processing complete. Final decoder pool size: {}", decoderPool.size());
+		// Log decoder state after processing
+		logging::debugFormat("Processing complete. Created {} decoders in parallel", decoderCount.load());
 		
-		logging::debug("Speech recognition -- end");
+		logging::debug("Speech recognition with parallel decoder creation -- end");
 		
 		// Calculate totals for speech recognition output
 		int totalWords = 0;
