@@ -568,7 +568,7 @@ void DetailedStderrSink::printSummary() {
 	if (threadLimitExplicit) {
 		std::cerr << "Thread limit: " << threadLimit << "\n";
 	} else {
-		std::cerr << "Thread limit: default\n";
+		std::cerr << "Thread limit: automatic (based on audio duration)\n";
 	}
 	std::cerr << "Threads utilized: " << maxThreadsUsed << "\n";
 	

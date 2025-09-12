@@ -192,8 +192,8 @@ int main(int platformArgc, char* platformArgv[]) {
 	);
 
 	tclap::ValueArg<int> maxThreadCount(
-		"", "threads", "The maximum number of worker threads to use.",
-		false, getProcessorCoreCount(), "number", cmd
+		"", "threads", "The maximum number of worker threads to use. 0 = automatic based on audio duration.",
+		false, 0, "number", cmd
 	);
 
 	tclap::ValueArg<string> extendedShapes(
@@ -350,8 +350,8 @@ int main(int platformArgc, char* platformArgv[]) {
 		}
 
 		// Validate and transform command line arguments
-		if (maxThreadCount.getValue() < 1) {
-			throw std::runtime_error("Thread count must be 1 or higher.");
+		if (maxThreadCount.getValue() < 0) {
+			throw std::runtime_error("Thread count must be 0 (automatic) or higher.");
 		}
 		
 		// Validate character timing arguments

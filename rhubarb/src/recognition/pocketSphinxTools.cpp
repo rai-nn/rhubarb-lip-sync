@@ -272,9 +272,35 @@ BoundedTimeline<Phone> recognizePhones(
 	// Perform speech recognition
 	try {
 		// Calculate all thread constraints for debugging
-		int maxThreads = maxThreadCount;
 		int utteranceCount = static_cast<int>(utterances.size());
 		double audioDurationSeconds = duration_cast<std::chrono::seconds>(audioClip->getTruncatedRange().getDuration()).count();
+		
+		// Determine the maximum thread count
+		int maxThreads;
+		if (maxThreadCount == 0) {
+			// Automatic mode: calculate based on audio duration
+			// Use the formula: audio_duration_seconds / 5
+			// This assumes 5 seconds of audio per thread is optimal
+			int durationBasedLimit = static_cast<int>(audioDurationSeconds / 5);
+			if (durationBasedLimit < 1) {
+				durationBasedLimit = 1;
+			}
+			
+			// Also limit by available CPU cores (use 4 as reasonable default)
+			int coreCount = std::thread::hardware_concurrency();
+			if (coreCount == 0) {
+				coreCount = 4;
+			}
+			
+			// Use the minimum of duration-based limit and core count
+			maxThreads = std::min(durationBasedLimit, coreCount);
+			
+			logging::debugFormat("Automatic thread calculation: duration={}s, durationBasedLimit={}, coreCount={}, selected={}", 
+				audioDurationSeconds, durationBasedLimit, coreCount, maxThreads);
+		} else {
+			// Explicit thread count specified
+			maxThreads = maxThreadCount;
+		}
 		
 		// Determine how many parallel threads to use
 		int threadCount = std::min({
