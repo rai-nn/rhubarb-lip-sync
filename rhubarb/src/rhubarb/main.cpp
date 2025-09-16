@@ -409,6 +409,9 @@ int main(int platformArgc, char* platformArgv[]) {
 			);
 		}
 
+		// Log version information
+		logging::infoFormat("{} version {}", appName, appVersion);
+		
 		// Log the input file or character timing mode
 		if (characterTimingFile.isSet()) {
 			logging::log(StartEntry(u8path(characterTimingFile.getValue())));
