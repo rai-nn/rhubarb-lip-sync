@@ -82,7 +82,7 @@ echo "🔧 Building rhubarb executable..."
 cmake --build . --config Release --target rhubarb
 
 # Check if build was successful
-if [ ! -f "$SCRIPT_DIR/build/rhubarb/rhubarb" ]; then
+if [ ! -f "$SCRIPT_DIR/build/rhubarb/Release/rhubarb" ]; then
     echo "❌ Build failed: rhubarb executable not found"
     exit 1
 fi
@@ -97,14 +97,12 @@ fi
 
 # Copy the binary
 echo "📦 Copying binary to visemes server..."
-cp "$SCRIPT_DIR/build/rhubarb/rhubarb" "$TARGET_DIR/"
+cp "$SCRIPT_DIR/build/rhubarb/Release/rhubarb" "$TARGET_DIR/"
 
-# Copy resource files if they exist and aren't already there
-if [ -d "$SCRIPT_DIR/lib/pocketsphinx-rev13216/model" ] && [ ! -d "$TARGET_DIR/res" ]; then
-    echo "📦 Copying resource files..."
-    mkdir -p "$TARGET_DIR/res"
-    cp -r "$SCRIPT_DIR/lib/pocketsphinx-rev13216/model" "$TARGET_DIR/res/"
-fi
+# Copy resource files
+echo "📦 Copying resource files..."
+cp -r "$SCRIPT_DIR/build/rhubarb/Release/res/" "$TARGET_DIR/res/"
+
 
 # Make the binary executable
 chmod +x "$TARGET_DIR/rhubarb"
