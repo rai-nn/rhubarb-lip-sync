@@ -142,3 +142,43 @@ cmake --build . --config Release --target runTests
 - CI/CD via GitHub Actions (.github/workflows/ci.yml)
 - when running rhubarb command line for testing purposes is needed, you can find wav files in /resources/audio.wav.
 - When you need to run rhubarb command line, you SHOULD use the local built version from ./build/rhubarb/ folder.
+
+## Troubleshooting
+
+### CMake Cache Errors After Repository Changes
+
+**Symptom:** Build fails with error like:
+```
+CMake Error: The current CMakeCache.txt directory ... is different than the directory ... where CMakeCache.txt was created.
+```
+
+**Cause:** CMake caches absolute source directory paths in `CMakeCache.txt`. When the repository location changes (migrations, renames, git operations), the cache becomes stale.
+
+**Solutions:**
+
+1. **For setup/deployment** - The `setup-rhubarb-lite.sh` script automatically builds clean. Just run:
+   ```bash
+   cd ctuber/src/server/lib/generators/implementations/rhubarb-lite
+   ./setup-rhubarb-lite.sh
+   ```
+
+2. **For development** - Use the clean build flag:
+   ```bash
+   cd ctuber/src/server/rhubarb-lip-sync
+   ./build-local.sh --clean
+   ```
+
+3. **Manual fix** - Delete the build directory and rebuild:
+   ```bash
+   cd ctuber/src/server/rhubarb-lip-sync
+   rm -rf build
+   ./build-local.sh
+   ```
+
+**When to use `--clean`:**
+- After repository path changes or migrations
+- When switching between branches with different build configurations
+- When build fails with cryptic CMake errors
+- After major git operations (rebases, merges that affect build structure)
+
+**Development tip:** For faster iteration when actively developing rhubarb, you can use `./build-local.sh` without `--clean`. Only use clean builds when needed.
