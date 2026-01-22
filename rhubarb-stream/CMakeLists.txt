@@ -145,6 +145,8 @@ set(ANIMATION_SOURCES
 	src/animation/ShapeRule.cpp
 	src/animation/ShapeRule.h
 	src/animation/shapeShorthands.h
+	src/animation/SentenceAnimator.cpp
+	src/animation/SentenceAnimator.h
 )
 
 set(CONFIG_SOURCES
@@ -176,6 +178,13 @@ set(QUEUE_SOURCES
 	src/queue/WorkerPool.cpp
 )
 
+set(PROCESSING_SOURCES
+	src/processing/AudioSlicer.cpp
+	src/processing/AudioSlicer.h
+	src/processing/PhoneRecognizer.cpp
+	src/processing/PhoneRecognizer.h
+)
+
 # =============================================================================
 # Static Library
 # =============================================================================
@@ -188,6 +197,7 @@ add_library(rhubarb-stream-core STATIC
 	${TOOLS_SOURCES}
 	${PROTOCOL_SOURCES}
 	${QUEUE_SOURCES}
+	${PROCESSING_SOURCES}
 )
 
 target_link_libraries(rhubarb-stream-core

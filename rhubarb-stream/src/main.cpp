@@ -36,6 +36,9 @@
 #include "queue/Sentence.h"
 #include "queue/SentenceQueue.h"
 #include "queue/WorkerPool.h"
+#include "processing/AudioSlicer.h"
+#include "processing/PhoneRecognizer.h"
+#include "animation/SentenceAnimator.h"
 
 using namespace rhubarb_stream;
 
@@ -80,47 +83,87 @@ struct StreamConfig {
 };
 
 /**
- * Placeholder sentence processor for Phase 3
+ * Shared processing components (thread-safe)
  *
- * In Phase 4, this will be replaced with actual PocketSphinx recognition
- * and phone-to-viseme conversion.
+ * PhoneRecognizer handles thread-local decoder storage internally.
+ * SentenceAnimator is stateless and safe to share.
  */
-void placeholderSentenceProcessor(
+static PhoneRecognizer g_phoneRecognizer;
+static SentenceAnimator g_sentenceAnimator;
+
+/**
+ * Real sentence processor for Phase 4
+ *
+ * Pipeline:
+ * 1. AudioSlicer extracts audio segment for sentence
+ * 2. PhoneRecognizer runs PocketSphinx with sentence text as dialog hint
+ * 3. SentenceAnimator converts phones to visemes
+ * 4. Visemes emitted via FrameWriter
+ */
+void realSentenceProcessor(
 	const Sentence& sentence,
 	const int16_t* audioData,
 	size_t audioSampleCount,
 	FrameWriter& writer
 ) {
-	// Calculate audio slice info (for debugging)
-	int startSample = static_cast<int>(sentence.start * Limits::SAMPLE_RATE);
-	int endSample = static_cast<int>(sentence.end * Limits::SAMPLE_RATE);
+	// Create audio slicer
+	AudioSlicer slicer(audioData, audioSampleCount);
 
-	// Clamp to buffer bounds
-	startSample = std::max(0, startSample);
-	endSample = std::min(static_cast<int>(audioSampleCount), endSample);
-
-	int sliceSamples = endSample - startSample;
+	// Extract audio slice with padding
+	auto audioSlice = slicer.slice(sentence.start, sentence.end);
+	double actualStart = slicer.getActualStart(sentence.start);
 
 	writer.emitDebug(fmt::format(
-		"Processing sentence #{}: '{}' (audio slice: {} samples, {:.2f}s)",
+		"Processing sentence #{}: '{}' (audio: {} samples, {:.2f}s)",
 		sentence.index,
-		sentence.text.substr(0, 30),
-		sliceSamples,
-		static_cast<double>(sliceSamples) / Limits::SAMPLE_RATE
+		sentence.text.substr(0, 40),
+		audioSlice.size(),
+		static_cast<double>(audioSlice.size()) / Limits::SAMPLE_RATE
 	));
 
-	// TODO Phase 4: Actual processing
-	// 1. Extract audio slice: audioData[startSample..endSample]
-	// 2. Run PocketSphinx with sentence.text as dialog hint
-	// 3. Convert phones to visemes using animationRules
-	// 4. Emit visemes via writer.emitViseme()
+	if (audioSlice.empty()) {
+		writer.emitDebug(fmt::format(
+			"Sentence #{}: No audio data available",
+			sentence.index
+		));
+		return;
+	}
 
-	// For now, emit a placeholder viseme to show the pipeline works
-	// This will be replaced in Phase 4
-	writer.emitDebug(fmt::format(
-		"Sentence #{} processed (placeholder - no visemes generated)",
-		sentence.index
-	));
+	try {
+		// Recognize phones using PocketSphinx
+		auto phones = g_phoneRecognizer.recognizePhones(
+			audioSlice,
+			sentence.text,
+			actualStart
+		);
+
+		writer.emitDebug(fmt::format(
+			"Sentence #{}: Recognized {} phones",
+			sentence.index,
+			phones.size()
+		));
+
+		// Convert phones to visemes
+		auto visemes = g_sentenceAnimator.animate(phones);
+
+		writer.emitDebug(fmt::format(
+			"Sentence #{}: Generated {} visemes",
+			sentence.index,
+			visemes.size()
+		));
+
+		// Emit visemes
+		for (const auto& viseme : visemes) {
+			writer.emitViseme(viseme.start, viseme.end, viseme.shape);
+		}
+
+	} catch (const std::exception& e) {
+		writer.emitError(fmt::format(
+			"Sentence #{} processing error: {}",
+			sentence.index,
+			e.what()
+		));
+	}
 }
 
 /**
@@ -333,11 +376,11 @@ private:
 			threadCount
 		));
 
-		// Create worker pool
+		// Create worker pool with real sentence processor
 		workerPool_ = std::make_unique<WorkerPool>(
 			sentenceQueue_,
 			writer_,
-			placeholderSentenceProcessor,
+			realSentenceProcessor,
 			audioBuffer_.data(),
 			audioBuffer_.sampleCount()
 		);
