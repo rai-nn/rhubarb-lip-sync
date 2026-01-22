@@ -1,12 +1,12 @@
 # rhubarb-stream Progress
 
-## Project Overview
+## Plan
 
 **RAI-1014**: Real-time streaming lip-sync viseme generation using PocketSphinx.
 
 This C++ binary receives audio chunks and transcription sentences via stdin (binary protocol), processes them in parallel using PocketSphinx speech recognition, and outputs JSON visemes via stdout.
 
-## Architecture
+### Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -39,7 +39,7 @@ This C++ binary receives audio chunks and transcription sentences via stdin (bin
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Binary Frame Protocol
+### Binary Frame Protocol
 
 ```
 [Type: 1 byte][Length: 4 bytes LE][Payload: N bytes]
@@ -52,23 +52,32 @@ Types:
 - 0xFF END:      Finalize and exit
 ```
 
+### Implementation Phases
+
+1. Phase 0: Project Setup ✅
+2. Phase 1: Core Infrastructure ✅
+3. Phase 2: Animation Rules ✅
+4. Phase 3: Parallel Processing ✅
+5. Phase 4: Sentence Processing ✅
+6. Phase 5: Node.js Integration (Pending)
+
 ---
 
-## Phase 0: Project Setup ✅
+## Logs
 
-**Completed**: Initial project structure, CMakeLists.txt, build system.
+### 2026-01-22: Phase 0-4 Implementation Complete
 
-**Files created:**
-- `CMakeLists.txt` - Build configuration with rhubarb lib/ dependencies
-- Basic source structure
+**Linear**: RAI-1014
+**Commit**: 5e1e280 (rhubarb-stream), 2d37b18 (ctuber submodule update)
 
----
+Completed initial implementation of rhubarb-stream with full viseme generation pipeline.
 
-## Phase 1: Core Infrastructure ✅
+#### Phase 0: Project Setup
+- Created `CMakeLists.txt` with rhubarb lib/ dependencies
+- Set up basic source structure
 
-**Completed**: Time types, Phone/Shape enums, binary protocol.
-
-**Files created:**
+#### Phase 1: Core Infrastructure
+Files created:
 - `src/core/Phone.h/.cpp` - ARPAbet phone enum
 - `src/core/Shape.h/.cpp` - Preston Blair 9-shape viseme system (A-H, X)
 - `src/time/centiseconds.h/.cpp` - Centisecond time unit
@@ -84,140 +93,125 @@ Types:
 - `src/tools/array.h` - Array utilities
 - `src/tools/tools.h` - Lambda unique_ptr helper
 
----
-
-## Phase 2: Animation Rules ✅
-
-**Completed**: Phone-to-shape mapping, animation rules from rhubarb.
-
-**Files created:**
+#### Phase 2: Animation Rules
+Files created:
 - `src/animation/animationRules.h/.cpp` - `getShapeRules()` and `getClosestShape()` from rhubarb
 - `src/animation/ShapeRule.h/.cpp` - Shape selection rule with weight
 - `src/animation/shapeShorthands.h` - Convenience macros for shape rules
 
----
-
-## Phase 3: Parallel Processing ✅
-
-**Completed**: Thread-safe sentence queue, worker pool, main frame loop.
-
-**Files created:**
+#### Phase 3: Parallel Processing
+Files created:
 - `src/queue/Sentence.h` - Sentence struct with JSON parsing
 - `src/queue/SentenceQueue.h/.cpp` - Thread-safe FIFO queue with finish signal
 - `src/queue/WorkerPool.h/.cpp` - Parallel worker threads with processor callback
 - `src/main.cpp` - Frame processing loop, AudioBuffer, FrameProcessor
 
-**Key patterns:**
+Key patterns:
 - RAI-739: Thread-local decoder storage for parallel sentence processing
 - Worker pool dynamically sized based on core count (capped at 4 for streaming)
 
+#### Phase 4: Sentence Processing
+Files created:
+- `src/processing/AudioSlicer.h/.cpp` - PCM segment extraction with 30ms padding
+- `src/processing/PhoneRecognizer.h/.cpp` - PocketSphinx wrapper with thread-local decoders
+- `src/animation/SentenceAnimator.h/.cpp` - Phone to viseme conversion
+
+Issues fixed:
+1. **`s3wid_t` undeclared identifier** - Added `#include <pocketsphinx_internal.h>` to header
+2. **"Cannot find sphinx model directory"** - Updated path resolution for nested CMake structure
+
 ---
 
-## Phase 4: Sentence Processing ✅
+### 2026-01-22: Test Scripts and Benchmark Comparison
 
-**Completed**: Full viseme generation pipeline with PocketSphinx.
+**Linear**: RAI-1014
 
-### Files Created
+Created comprehensive test suite for validating rhubarb-stream against rhubarb-lite.
 
-**`src/processing/AudioSlicer.h/.cpp`** - PCM segment extraction
+#### Test Scripts Created
 
-Extracts audio slices with configurable padding (default 30ms before/after) for acoustic context:
-```cpp
-class AudioSlicer {
-public:
-    AudioSlicer(const int16_t* audioData, size_t sampleCount, int paddingMs = 30);
-    std::vector<int16_t> slice(double startSeconds, double endSeconds) const;
-    double getActualStart(double startSeconds) const;  // Returns padded start time
-    double getActualEnd(double endSeconds) const;      // Returns padded end time
-};
+**`test-stream.py`** - Basic test script
+- Loads WAV file, encodes binary frames, sends to rhubarb-stream
+- Displays viseme output
+
+**`test-verbose.py`** - Verbose data flow visualization
+- Shows INPUT → PROCESS → OUTPUT with colored output
+- Displays frame sequence, debug messages, viseme stream
+- Summary with shape distribution
+
+**`test-realtime.py`** - Real-time streaming test with benchmark
+- Simulates realistic streaming with random 2-4 second audio chunks
+- Real-time output display as processing happens
+- Runs rhubarb-lite benchmark on same audio for comparison
+- Outputs both results in identical JSON format
+
+Usage:
+```bash
+./test-realtime.py /path/to/audio.wav "Transcript text here"
 ```
 
-**`src/processing/PhoneRecognizer.h/.cpp`** - PocketSphinx wrapper
+#### Benchmark Results (31.48s audio - summer_camp.wav)
 
-Thread-safe phone recognition with decoder pooling:
-```cpp
-class PhoneRecognizer {
-public:
-    BoundedTimeline<Phone> recognizePhones(
-        const std::vector<int16_t>& audioSlice,
-        const std::string& sentenceText,    // Dialog hint for better accuracy
-        double sliceStartSeconds            // Offset for absolute timestamps
-    );
-private:
-    // Thread-local decoder storage (RAI-739 pattern)
-    std::unordered_map<std::thread::id, DecoderEntry> threadDecoders_;
-    std::mutex decoderMapMutex_;
-};
-```
+| Metric | rhubarb-stream | rhubarb-lite |
+|--------|---------------|--------------|
+| Processing time | 7.44s | 3.13s |
+| Speed | 4.2x realtime | 10.1x realtime |
+| Visemes | 152 | 157 |
 
-Key features:
-- Thread-local decoder storage for parallel processing
-- Dialog hint (sentence text) improves recognition accuracy
-- Automatic G2P fallback for unknown words
-- Dynamic path resolution for sphinx models (handles both nested and flat structures)
+Shape distribution comparison:
+- Both produce similar distributions (A, B, C, E, F, G, H, X)
+- Minor differences in counts due to slightly different animation rules/merging
 
-**`src/animation/SentenceAnimator.h/.cpp`** - Phone to viseme conversion
+#### Output Files
 
-Converts phone timeline to visemes using rhubarb's animation rules:
-```cpp
-struct Viseme {
-    double start, end;
-    Shape shape;
-};
+Both saved in identical format for drag-and-drop testing tool:
+- `rhubarb-stream-visemes.json`
+- `rhubarb-lite-visemes.json`
 
-class SentenceAnimator {
-public:
-    std::vector<Viseme> animate(const BoundedTimeline<Phone>& phones);
-private:
-    Shape selectShape(const ShapeSet& shapeSet, Shape previousShape);
-    std::vector<Viseme> mergeAdjacentVisemes(const std::vector<Viseme>& visemes);
-};
-```
-
-### Files Modified
-
-**`src/main.cpp`** - Integrated real sentence processor:
-```cpp
-static PhoneRecognizer g_phoneRecognizer;
-static SentenceAnimator g_sentenceAnimator;
-
-void realSentenceProcessor(
-    const Sentence& sentence,
-    const int16_t* audioData,
-    size_t audioSampleCount,
-    FrameWriter& writer
-) {
-    AudioSlicer slicer(audioData, audioSampleCount);
-    auto audioSlice = slicer.slice(sentence.start, sentence.end);
-    auto phones = g_phoneRecognizer.recognizePhones(audioSlice, sentence.text, actualStart);
-    auto visemes = g_sentenceAnimator.animate(phones);
-    for (const auto& viseme : visemes) {
-        writer.emitViseme(viseme.start, viseme.end, viseme.shape);
-    }
+Format:
+```json
+{
+  "duration": 31.48,
+  "visemes": [
+    {"start": 0.0, "end": 0.11, "value": "X"},
+    {"start": 0.11, "end": 0.5, "value": "B"},
+    ...
+  ]
 }
 ```
 
-**`CMakeLists.txt`** - Added new source files to build
+#### Why rhubarb-stream is slower
 
-### Issues Fixed
+1. Resampling done in Python (rhubarb-lite handles natively)
+2. Binary protocol encoding/decoding overhead
+3. Thread pool startup for parallel processing
+4. In production, streaming architecture enables processing *while* audio arrives, hiding latency
 
-1. **`s3wid_t` undeclared identifier**
-   - Location: `PhoneRecognizer.h:105`
-   - Fix: Added `#include <pocketsphinx_internal.h>` to header
+---
 
-2. **"Cannot find sphinx model directory" runtime error**
-   - Cause: CMake copies sphinx models with nested structure (`pocketsphinx-rev13216/model/en-us/`)
-   - Fix: Updated `findSphinxModelDirectory()` to check both nested and flat paths
+## Build & Test
 
-### Test Results
+```bash
+# Build
+mkdir build && cd build
+cmake ..
+make -j$(nproc)
 
-All 10 tests pass with visemes being generated:
+# Run real-time test with benchmark
+cd ..
+python3 test-realtime.py /path/to/audio.wav "Transcript text"
 ```
-viseme: {"type":"viseme","start":0,"end":0.13,"value":"X"}
-viseme: {"type":"viseme","start":0.13,"end":0.96,"value":"B"}
-viseme: {"type":"viseme","start":0.96,"end":1,"value":"X"}
-...
-```
+
+---
+
+## Key Design Decisions
+
+1. **Binary protocol over JSON**: Efficient audio transmission, minimal parsing overhead
+2. **Parallel sentence processing**: Utilizes multi-core CPUs for faster throughput
+3. **Thread-local decoders**: Avoids decoder contention, follows RAI-739 pattern
+4. **30ms audio padding**: Provides acoustic context for better phone boundary detection
+5. **Dialog hints**: Sentence text improves PocketSphinx accuracy
+6. **Viseme merging**: Reduces output noise by combining adjacent same-shape visemes
 
 ---
 
@@ -231,29 +225,3 @@ viseme: {"type":"viseme","start":0.96,"end":1,"value":"X"}
 - [ ] Handle JSON output parsing
 - [ ] Test with real TTS audio
 - [ ] Performance benchmarking vs original rhubarb
-
----
-
-## Build & Test
-
-```bash
-# Build
-mkdir build && cd build
-cmake ..
-make -j$(nproc)
-
-# Test
-cd ..
-./test.sh  # Runs all 10 test cases
-```
-
----
-
-## Key Design Decisions
-
-1. **Binary protocol over JSON**: Efficient audio transmission, minimal parsing overhead
-2. **Parallel sentence processing**: Utilizes multi-core CPUs for faster throughput
-3. **Thread-local decoders**: Avoids decoder contention, follows RAI-739 pattern
-4. **30ms audio padding**: Provides acoustic context for better phone boundary detection
-5. **Dialog hints**: Sentence text improves PocketSphinx accuracy
-6. **Viseme merging**: Reduces output noise by combining adjacent same-shape visemes
