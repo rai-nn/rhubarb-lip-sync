@@ -170,6 +170,10 @@ set(PROTOCOL_SOURCES
 
 set(QUEUE_SOURCES
 	src/queue/Sentence.h
+	src/queue/SentenceQueue.h
+	src/queue/SentenceQueue.cpp
+	src/queue/WorkerPool.h
+	src/queue/WorkerPool.cpp
 )
 
 # =============================================================================

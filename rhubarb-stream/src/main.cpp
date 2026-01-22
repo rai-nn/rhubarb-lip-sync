@@ -20,6 +20,7 @@
 #include <vector>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <format.h>
 #include <json.hpp>
 
@@ -33,6 +34,8 @@
 #include "protocol/FrameReader.h"
 #include "protocol/FrameWriter.h"
 #include "queue/Sentence.h"
+#include "queue/SentenceQueue.h"
+#include "queue/WorkerPool.h"
 
 using namespace rhubarb_stream;
 
@@ -73,8 +76,52 @@ private:
 struct StreamConfig {
 	int sampleRate = Limits::SAMPLE_RATE;
 	bool debugEnabled = true;
-	// TODO: Add more config options (pause threshold, speech speed, etc.)
+	int threadCount = 0;  // 0 = auto-calculate
 };
+
+/**
+ * Placeholder sentence processor for Phase 3
+ *
+ * In Phase 4, this will be replaced with actual PocketSphinx recognition
+ * and phone-to-viseme conversion.
+ */
+void placeholderSentenceProcessor(
+	const Sentence& sentence,
+	const int16_t* audioData,
+	size_t audioSampleCount,
+	FrameWriter& writer
+) {
+	// Calculate audio slice info (for debugging)
+	int startSample = static_cast<int>(sentence.start * Limits::SAMPLE_RATE);
+	int endSample = static_cast<int>(sentence.end * Limits::SAMPLE_RATE);
+
+	// Clamp to buffer bounds
+	startSample = std::max(0, startSample);
+	endSample = std::min(static_cast<int>(audioSampleCount), endSample);
+
+	int sliceSamples = endSample - startSample;
+
+	writer.emitDebug(fmt::format(
+		"Processing sentence #{}: '{}' (audio slice: {} samples, {:.2f}s)",
+		sentence.index,
+		sentence.text.substr(0, 30),
+		sliceSamples,
+		static_cast<double>(sliceSamples) / Limits::SAMPLE_RATE
+	));
+
+	// TODO Phase 4: Actual processing
+	// 1. Extract audio slice: audioData[startSample..endSample]
+	// 2. Run PocketSphinx with sentence.text as dialog hint
+	// 3. Convert phones to visemes using animationRules
+	// 4. Emit visemes via writer.emitViseme()
+
+	// For now, emit a placeholder viseme to show the pipeline works
+	// This will be replaced in Phase 4
+	writer.emitDebug(fmt::format(
+		"Sentence #{} processed (placeholder - no visemes generated)",
+		sentence.index
+	));
+}
 
 /**
  * Main frame processor
@@ -98,6 +145,7 @@ public:
 
 			if (result == ReadResult::EndOfStream) {
 				// Clean EOF - finalize
+				finalizeProcessing();
 				writer_.emitEnd(audioBuffer_.durationSeconds());
 				return 0;
 			}
@@ -139,10 +187,11 @@ public:
 
 				case FrameType::Reset:
 					processResetFrame();
+					sentenceIndex = 0;
 					break;
 
 				case FrameType::End:
-					// TODO: Wait for worker pool to complete
+					finalizeProcessing();
 					writer_.emitEnd(maxTime_);
 					return 0;
 
@@ -214,12 +263,11 @@ private:
 			maxTime_ = sentence->end;
 		}
 
-		// TODO: Phase 3-4 implementation:
-		// 1. Queue sentence for worker pool
-		// 2. Worker extracts audio slice using start/end times
-		// 3. Run PocketSphinx recognition with sentence text as hint
-		// 4. Convert phones to visemes using animationRules
-		// 5. Emit visemes with absolute timestamps
+		// Ensure worker pool is started
+		ensureWorkerPoolStarted();
+
+		// Queue sentence for processing
+		sentenceQueue_.push(std::move(*sentence));
 
 		return true;
 	}
@@ -236,6 +284,9 @@ private:
 				config_.debugEnabled = config["debug"].get<bool>();
 				writer_.setDebugEnabled(config_.debugEnabled);
 			}
+			if (config.contains("thread_count")) {
+				config_.threadCount = config["thread_count"].get<int>();
+			}
 
 			writer_.emitDebug(fmt::format(
 				"Config received: {} keys", config.size()));
@@ -249,10 +300,68 @@ private:
 	}
 
 	void processResetFrame() {
+		// Finalize any in-progress work
+		finalizeProcessing();
+
+		// Clear state
 		audioBuffer_.clear();
 		maxTime_ = 0.0;
 
-		writer_.emitDebug("Audio buffer reset");
+		// Reset worker pool (will be recreated on next sentence)
+		workerPool_.reset();
+
+		writer_.emitDebug("Audio buffer and worker pool reset");
+	}
+
+	void ensureWorkerPoolStarted() {
+		if (workerPool_) {
+			return;  // Already started
+		}
+
+		// Calculate thread count
+		int threadCount = config_.threadCount;
+		if (threadCount <= 0) {
+			// Auto-calculate: will be refined as more sentences arrive
+			// For now, use a reasonable default based on cores
+			int coreCount = static_cast<int>(std::thread::hardware_concurrency());
+			if (coreCount == 0) coreCount = 4;
+			threadCount = std::min(coreCount, 4);  // Cap at 4 for streaming
+		}
+
+		writer_.emitDebug(fmt::format(
+			"Creating worker pool with {} threads",
+			threadCount
+		));
+
+		// Create worker pool
+		workerPool_ = std::make_unique<WorkerPool>(
+			sentenceQueue_,
+			writer_,
+			placeholderSentenceProcessor,
+			audioBuffer_.data(),
+			audioBuffer_.sampleCount()
+		);
+
+		workerPool_->start(threadCount);
+	}
+
+	void finalizeProcessing() {
+		if (!workerPool_) {
+			return;  // No workers to wait for
+		}
+
+		writer_.emitDebug("Finalizing: waiting for workers to complete...");
+
+		// Signal no more sentences
+		sentenceQueue_.finish();
+
+		// Wait for all workers
+		workerPool_->waitForCompletion();
+
+		writer_.emitDebug(fmt::format(
+			"Workers completed: {} sentences processed",
+			workerPool_->sentencesProcessed()
+		));
 	}
 
 	FrameReader& reader_;
@@ -260,6 +369,10 @@ private:
 	AudioBuffer audioBuffer_;
 	StreamConfig config_;
 	double maxTime_ = 0.0;
+
+	// Parallel processing
+	SentenceQueue sentenceQueue_;
+	std::unique_ptr<WorkerPool> workerPool_;
 };
 
 int main() {
