@@ -35,6 +35,12 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 # =============================================================================
 set(RHUBARB_LIB "${CMAKE_CURRENT_SOURCE_DIR}/../rhubarb/lib")
 
+# Validate that rhubarb lib directory exists
+if(NOT EXISTS "${RHUBARB_LIB}")
+	message(FATAL_ERROR "Rhubarb lib directory not found at ${RHUBARB_LIB}. "
+		"Ensure rhubarb-lip-sync submodule is properly initialized.")
+endif()
+
 # ... Boost
 cmake_policy(SET CMP0167 OLD)
 find_package(Boost 1.54 REQUIRED)
@@ -105,6 +111,9 @@ set_target_properties(webRtc PROPERTIES FOLDER lib)
 
 # ... GSL
 include_directories(SYSTEM "${RHUBARB_LIB}/gsl/include")
+
+# ... nlohmann/json (single-header JSON library)
+include_directories(SYSTEM "${RHUBARB_LIB}/nlohmann-json")
 
 # =============================================================================
 # Rhubarb Stream Sources
