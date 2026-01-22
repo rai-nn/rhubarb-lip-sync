@@ -20,7 +20,6 @@
 #include <vector>
 #include <cstdint>
 #include <cstring>
-#include <mutex>
 #include <format.h>
 #include <json.hpp>
 
@@ -30,80 +29,238 @@
 #include <fcntl.h>
 #endif
 
-#include "core/Phone.h"
-#include "core/Shape.h"
-#include "time/centiseconds.h"
-#include "animation/animationRules.h"
+#include "protocol/FrameTypes.h"
+#include "protocol/FrameReader.h"
+#include "protocol/FrameWriter.h"
+#include "queue/Sentence.h"
 
-using json = nlohmann::json;
+using namespace rhubarb_stream;
 
-// Frame types
-enum class FrameType : uint8_t {
-	Audio = 0x01,
-	Sentence = 0x02,
-	Config = 0x03,
-	Reset = 0x04,
-	End = 0xFF
+/**
+ * Audio buffer manager
+ *
+ * Accumulates PCM audio chunks and provides access for sentence processing.
+ */
+class AudioBuffer {
+public:
+	void append(const int16_t* samples, size_t count) {
+		size_t oldSize = samples_.size();
+		samples_.resize(oldSize + count);
+		std::memcpy(samples_.data() + oldSize, samples, count * sizeof(int16_t));
+	}
+
+	void clear() {
+		samples_.clear();
+		samples_.shrink_to_fit();
+	}
+
+	size_t sampleCount() const { return samples_.size(); }
+	size_t byteCount() const { return samples_.size() * sizeof(int16_t); }
+	double durationSeconds() const {
+		return static_cast<double>(samples_.size()) / Limits::SAMPLE_RATE;
+	}
+
+	const int16_t* data() const { return samples_.data(); }
+	bool empty() const { return samples_.empty(); }
+
+private:
+	std::vector<int16_t> samples_;
 };
 
-// Constants
-constexpr size_t MAX_AUDIO_BYTES = 100 * 1024 * 1024;  // 100MB max audio buffer
-constexpr size_t MAX_PAYLOAD_BYTES = 50 * 1024 * 1024; // 50MB max single frame payload
-constexpr int SAMPLE_RATE = 16000;                      // 16kHz expected sample rate
+/**
+ * Configuration for rhubarb-stream processing
+ */
+struct StreamConfig {
+	int sampleRate = Limits::SAMPLE_RATE;
+	bool debugEnabled = true;
+	// TODO: Add more config options (pause threshold, speech speed, etc.)
+};
 
-// Thread-safe output mutex
-static std::mutex outputMutex;
+/**
+ * Main frame processor
+ *
+ * Handles the frame processing loop and orchestrates components.
+ */
+class FrameProcessor {
+public:
+	FrameProcessor(FrameReader& reader, FrameWriter& writer)
+		: reader_(reader), writer_(writer) {}
 
-// Read exactly n bytes from stdin, handling partial reads
-bool readBytes(void* buffer, size_t count) {
-	std::cin.read(reinterpret_cast<char*>(buffer), count);
-	// Check that we read exactly the requested number of bytes
-	if (std::cin.gcount() != static_cast<std::streamsize>(count)) {
-		return false;  // Partial read or EOF
+	int run() {
+		// Signal ready
+		writer_.emitReady();
+
+		Frame frame;
+		size_t sentenceIndex = 0;
+
+		while (true) {
+			ReadResult result = reader_.readFrame(frame);
+
+			if (result == ReadResult::EndOfStream) {
+				// Clean EOF - finalize
+				writer_.emitEnd(audioBuffer_.durationSeconds());
+				return 0;
+			}
+
+			if (result == ReadResult::ReadError) {
+				writer_.emitError("Failed to read frame from stdin");
+				return 1;
+			}
+
+			if (result == ReadResult::PayloadTooLarge) {
+				writer_.emitError("Frame payload exceeds maximum size");
+				return 1;
+			}
+
+			if (result == ReadResult::InvalidFrameType) {
+				writer_.emitError("Invalid frame type received");
+				return 1;
+			}
+
+			// Process frame based on type
+			switch (frame.type()) {
+				case FrameType::Audio:
+					if (!processAudioFrame(frame)) {
+						return 1;
+					}
+					break;
+
+				case FrameType::Sentence:
+					if (!processSentenceFrame(frame, sentenceIndex++)) {
+						return 1;
+					}
+					break;
+
+				case FrameType::Config:
+					if (!processConfigFrame(frame)) {
+						return 1;
+					}
+					break;
+
+				case FrameType::Reset:
+					processResetFrame();
+					break;
+
+				case FrameType::End:
+					// TODO: Wait for worker pool to complete
+					writer_.emitEnd(maxTime_);
+					return 0;
+
+				default:
+					writer_.emitError(fmt::format("Unknown frame type: 0x{:02X}",
+						static_cast<uint8_t>(frame.type())));
+					break;
+			}
+		}
 	}
-	// Accept if stream is good OR if we hit EOF exactly at the boundary
-	return std::cin.good() || std::cin.eof();
-}
 
-// Write a JSON line to stdout (thread-safe)
-void writeJsonLine(const std::string& jsonStr) {
-	std::lock_guard<std::mutex> lock(outputMutex);
-	std::cout << jsonStr << "\n" << std::flush;
-}
+private:
+	bool processAudioFrame(const Frame& frame) {
+		// Skip zero-length audio frames (malformed but non-fatal)
+		if (frame.payloadSize() == 0) {
+			writer_.emitDebug("Ignoring zero-length audio frame");
+			return true;
+		}
 
-// Output a viseme
-void emitViseme(double start, double end, Shape shape) {
-	writeJsonLine(fmt::format(
-		R"({{"type":"viseme","start":{:.3f},"end":{:.3f},"value":"{}"}})",
-		start, end, ShapeConverter::get().toString(shape)
-	));
-}
+		// Validate alignment (must be even for 16-bit samples)
+		if (frame.payloadSize() % Limits::BYTES_PER_SAMPLE != 0) {
+			writer_.emitError(fmt::format(
+				"Audio payload must be even bytes, got {}", frame.payloadSize()));
+			return false;
+		}
 
-// Output the final end message
-void emitEnd(int totalVisemes, double duration) {
-	writeJsonLine(fmt::format(
-		R"({{"type":"end","total_visemes":{},"duration":{:.3f}}})",
-		totalVisemes, duration
-	));
-}
+		// Check accumulated buffer size limit
+		size_t newSampleCount = frame.sampleCount();
+		size_t totalBytes = audioBuffer_.byteCount() + frame.payloadSize();
+		if (totalBytes > Limits::MAX_AUDIO_BYTES) {
+			writer_.emitError(fmt::format(
+				"Audio buffer size {} bytes exceeds maximum {} bytes",
+				totalBytes, Limits::MAX_AUDIO_BYTES));
+			return false;
+		}
 
-// Output an error message
-void emitError(const std::string& message) {
-	writeJsonLine(fmt::format(
-		R"({{"type":"error","message":"{}"}})",
-		message
-	));
-}
+		// Accumulate audio chunk
+		audioBuffer_.append(frame.payloadAsSamples(), newSampleCount);
 
-// Output a ready message
-void emitReady() {
-	writeJsonLine(R"({"type":"ready","version":"1.0.0"})");
-}
+		writer_.emitDebug(fmt::format(
+			"Audio chunk: +{} samples, total: {} ({:.2f}s)",
+			newSampleCount,
+			audioBuffer_.sampleCount(),
+			audioBuffer_.durationSeconds()
+		));
 
-// Convert centiseconds to seconds
-inline double toSeconds(centiseconds cs) {
-	return cs.count() / 100.0;
-}
+		return true;
+	}
+
+	bool processSentenceFrame(const Frame& frame, size_t index) {
+		auto sentence = Sentence::fromJson(frame.payloadAsString(), index);
+		if (!sentence) {
+			writer_.emitError(fmt::format(
+				"Failed to parse SENTENCE frame #{} - sentence will be skipped", index));
+			return true;  // Non-fatal, continue processing (but client is notified)
+		}
+
+		writer_.emitDebug(fmt::format(
+			"Sentence #{}: '{}' ({:.2f}s - {:.2f}s, {} words)",
+			index,
+			sentence->text.substr(0, 50),
+			sentence->start,
+			sentence->end,
+			sentence->wordCount()
+		));
+
+		// Track max time for final duration
+		if (sentence->end > maxTime_) {
+			maxTime_ = sentence->end;
+		}
+
+		// TODO: Phase 3-4 implementation:
+		// 1. Queue sentence for worker pool
+		// 2. Worker extracts audio slice using start/end times
+		// 3. Run PocketSphinx recognition with sentence text as hint
+		// 4. Convert phones to visemes using animationRules
+		// 5. Emit visemes with absolute timestamps
+
+		return true;
+	}
+
+	bool processConfigFrame(const Frame& frame) {
+		try {
+			auto config = nlohmann::json::parse(frame.payloadAsString());
+
+			// Apply configuration settings
+			if (config.contains("sample_rate")) {
+				config_.sampleRate = config["sample_rate"].get<int>();
+			}
+			if (config.contains("debug")) {
+				config_.debugEnabled = config["debug"].get<bool>();
+				writer_.setDebugEnabled(config_.debugEnabled);
+			}
+
+			writer_.emitDebug(fmt::format(
+				"Config received: {} keys", config.size()));
+
+		} catch (const nlohmann::json::parse_error& e) {
+			writer_.emitError(fmt::format(
+				"JSON parse error in CONFIG frame: {}", e.what()));
+		}
+
+		return true;
+	}
+
+	void processResetFrame() {
+		audioBuffer_.clear();
+		maxTime_ = 0.0;
+
+		writer_.emitDebug("Audio buffer reset");
+	}
+
+	FrameReader& reader_;
+	FrameWriter& writer_;
+	AudioBuffer audioBuffer_;
+	StreamConfig config_;
+	double maxTime_ = 0.0;
+};
 
 int main() {
 	// Set binary mode for stdin/stdout on Windows
@@ -116,159 +273,11 @@ int main() {
 	std::ios_base::sync_with_stdio(false);
 	std::cin.tie(nullptr);
 
-	// Signal ready
-	emitReady();
+	// Create protocol components
+	FrameReader reader(std::cin);
+	FrameWriter writer(std::cout);
 
-	// Audio buffer accumulates chunks across frames
-	std::vector<int16_t> audioBuffer;
-	int totalVisemes = 0;
-	double maxTime = 0.0;
-
-	// Main frame processing loop
-	while (true) {
-		// Read frame header: type (1 byte) + length (4 bytes LE)
-		uint8_t frameType;
-		uint32_t payloadLength;
-
-		if (!readBytes(&frameType, 1)) {
-			// EOF or error - exit gracefully
-			break;
-		}
-
-		if (!readBytes(&payloadLength, 4)) {
-			emitError("Failed to read frame length");
-			return 1;
-		}
-
-		// Validate payload size
-		if (payloadLength > MAX_PAYLOAD_BYTES) {
-			emitError(fmt::format("Payload too large: {} bytes (max {})",
-				payloadLength, MAX_PAYLOAD_BYTES));
-			return 1;
-		}
-
-		// Read payload
-		std::vector<uint8_t> payload(payloadLength);
-		if (payloadLength > 0 && !readBytes(payload.data(), payloadLength)) {
-			emitError("Failed to read frame payload");
-			return 1;
-		}
-
-		// Process frame based on type
-		switch (static_cast<FrameType>(frameType)) {
-			case FrameType::Audio: {
-				// Validate alignment (must be even for 16-bit samples)
-				if (payloadLength % 2 != 0) {
-					emitError(fmt::format("Audio payload must be even bytes, got {}", payloadLength));
-					return 1;
-				}
-
-				// Check accumulated buffer size limit
-				size_t newSampleCount = payloadLength / 2;
-				size_t totalBytes = (audioBuffer.size() + newSampleCount) * 2;
-				if (totalBytes > MAX_AUDIO_BYTES) {
-					emitError(fmt::format("Audio buffer would exceed {} bytes limit", MAX_AUDIO_BYTES));
-					return 1;
-				}
-
-				// Accumulate audio chunk (append, not replace)
-				size_t oldSize = audioBuffer.size();
-				audioBuffer.resize(oldSize + newSampleCount);
-				std::memcpy(audioBuffer.data() + oldSize, payload.data(), payloadLength);
-
-				// Debug: acknowledge audio received
-				writeJsonLine(fmt::format(
-					R"JSON({{"type":"debug","message":"Audio chunk: +{} samples, total: {} ({:.2f}s)"}})JSON",
-					newSampleCount,
-					audioBuffer.size(),
-					static_cast<double>(audioBuffer.size()) / SAMPLE_RATE
-				));
-				break;
-			}
-
-			case FrameType::Sentence: {
-				// Parse JSON sentence
-				std::string jsonStr(payload.begin(), payload.end());
-
-				try {
-					json sentence = json::parse(jsonStr);
-
-					// Extract sentence data
-					std::string text = sentence.value("text", "");
-					double start = sentence.value("start", 0.0);
-					double end = sentence.value("end", 0.0);
-
-					writeJsonLine(fmt::format(
-						R"JSON({{"type":"debug","message":"Sentence: '{}' ({:.2f}s - {:.2f}s)"}})JSON",
-						text.substr(0, 50), start, end
-					));
-
-					// TODO: Phase 3-4 implementation:
-					// 1. Extract audio slice from audioBuffer using start/end times
-					// 2. Run PocketSphinx recognition with sentence text as hint
-					// 3. Convert phones to visemes using animationRules
-					// 4. Emit visemes with absolute timestamps
-
-					// Track max time for final duration
-					if (end > maxTime) {
-						maxTime = end;
-					}
-
-				} catch (const json::parse_error& e) {
-					emitError(fmt::format("JSON parse error in SENTENCE frame: {}", e.what()));
-				}
-				break;
-			}
-
-			case FrameType::Config: {
-				// Parse configuration JSON
-				std::string jsonStr(payload.begin(), payload.end());
-
-				try {
-					json config = json::parse(jsonStr);
-
-					// TODO: Apply configuration settings
-					// - sample_rate (verify matches expected)
-					// - pause_threshold
-					// - speech_speed (slow/normal/fast)
-
-					writeJsonLine(fmt::format(
-						R"({{"type":"debug","message":"Config received: {} keys"}})",
-						config.size()
-					));
-
-				} catch (const json::parse_error& e) {
-					emitError(fmt::format("JSON parse error in CONFIG frame: {}", e.what()));
-				}
-				break;
-			}
-
-			case FrameType::Reset: {
-				// Clear audio buffer for new stream
-				audioBuffer.clear();
-				audioBuffer.shrink_to_fit();
-				totalVisemes = 0;
-				maxTime = 0.0;
-
-				writeJsonLine(R"({"type":"debug","message":"Audio buffer reset"})");
-				break;
-			}
-
-			case FrameType::End: {
-				// Finalize: wait for all workers, emit end message
-				// TODO: Wait for worker pool to complete
-				emitEnd(totalVisemes, maxTime);
-				return 0;
-			}
-
-			default: {
-				emitError(fmt::format("Unknown frame type: 0x{:02X}", frameType));
-				break;
-			}
-		}
-	}
-
-	// If we get here, stdin closed unexpectedly
-	emitEnd(totalVisemes, maxTime);
-	return 0;
+	// Run the frame processor
+	FrameProcessor processor(reader, writer);
+	return processor.run();
 }

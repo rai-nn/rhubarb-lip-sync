@@ -160,6 +160,18 @@ set(TOOLS_SOURCES
 	src/tools/tools.h
 )
 
+set(PROTOCOL_SOURCES
+	src/protocol/FrameTypes.h
+	src/protocol/FrameReader.cpp
+	src/protocol/FrameReader.h
+	src/protocol/FrameWriter.cpp
+	src/protocol/FrameWriter.h
+)
+
+set(QUEUE_SOURCES
+	src/queue/Sentence.h
+)
+
 # =============================================================================
 # Static Library
 # =============================================================================
@@ -170,6 +182,8 @@ add_library(rhubarb-stream-core STATIC
 	${ANIMATION_SOURCES}
 	${CONFIG_SOURCES}
 	${TOOLS_SOURCES}
+	${PROTOCOL_SOURCES}
+	${QUEUE_SOURCES}
 )
 
 target_link_libraries(rhubarb-stream-core
